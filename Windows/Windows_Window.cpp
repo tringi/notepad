@@ -272,12 +272,11 @@ LRESULT Windows::Window::Dispatch (UINT message, WPARAM wParam, LPARAM lParam) {
     if (message >= WM_APP && message <= 0xBFFF) {
         return this->OnAppMessage (message, wParam, lParam);
     }
-    if (message >= 0xC000 && message <= 0xFFFF) {
-        return this->OnRegisteredMessage (message, wParam, lParam);
-    }
-
     if (auto result = this->ProcessPresentationMessage (this->hWnd, message, wParam, lParam)) {
         return *result;
+    }
+    if (message >= 0xC000 && message <= 0xFFFF) {
+        return this->OnRegisteredMessage (message, wParam, lParam);
     }
     /*if (auto result = DwmDefWindowProc (this->hWnd, message, wParam, lParam)) {
         return *result;

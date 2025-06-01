@@ -48,23 +48,23 @@ LRESULT Windows::WindowPresentation::RefreshWindowPresentation (HWND hWnd, UINT 
     // dark mode
 
     if (ptrAllowDarkModeForWindow) {
-        ptrAllowDarkModeForWindow (hWnd, true);
+        ptrAllowDarkModeForWindow (hWnd, global.dark);
+    }
 
-        if (winver.build >= 22543) {
-            DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_MAINWINDOW; // DWMSBT_TABBEDWINDOW;
-            DwmSetWindowAttribute (hWnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof backdrop);
-        }//*/
+    if (winver.build >= 22543) {
+        DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_MAINWINDOW; // DWMSBT_TABBEDWINDOW;
+        DwmSetWindowAttribute (hWnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof backdrop);
+    }//*/
 
-        if (winver.build >= 20161) {
-            DwmSetWindowAttribute (hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &global.dark, sizeof global.dark);
-        } else
-        if (winver.build >= 18875) {
-            CompositionAttributeData attr = { 26, &global.dark, sizeof global.dark }; // WCA_USEDARKMODECOLORS
-            ptrSetWindowCompositionAttribute (hWnd, &attr);
-        } else
-        if (winver.build >= 14393) {
-            DwmSetWindowAttribute (hWnd, 0x13, &global.dark, sizeof global.dark);
-        }
+    if (winver.build >= 20161) {
+        DwmSetWindowAttribute (hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &global.dark, sizeof global.dark);
+    } else
+    if (winver.build >= 18875 && ptrSetWindowCompositionAttribute) {
+        CompositionAttributeData attr = { 26, &global.dark, sizeof global.dark }; // WCA_USEDARKMODECOLORS
+        ptrSetWindowCompositionAttribute (hWnd, &attr);
+    } else
+    if (winver.build >= 14393) {
+        DwmSetWindowAttribute (hWnd, 0x13, &global.dark, sizeof global.dark);
     }
 
     // metrics
