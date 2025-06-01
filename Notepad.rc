@@ -1,0 +1,78 @@
+#include <Windows.h>
+
+1 ICON "trimcore.ico"
+
+1 ACCELERATORS
+{
+    "^N", 0x1001 // Ctrl+N
+    // "^C", 0xCC // Ctrl+C - copy screenshot clipboard
+    VK_F4, 0xCF, VIRTKEY, ALT, CONTROL // Ctrl+Alt+F4 - quit whole process
+
+    // F1 - help: visit trimcore
+    // Ctrl+0 - 100% zoom (also Ctrl+*), increment: (Ctrl++,Ctrl+=), decrement (Ctrl+-)
+
+    VK_F11, 0xFB, VIRTKEY // F11 - full screen, TODO: Win+Shift+Enter
+    // VK_RETURN, 0xFB, VIRTKEY, ALT
+    // VK_F12, 0xFC, VIRTKEY
+
+    // Menu
+    //  - reserved 0x10...0x1F
+
+    "F", 0x10, VIRTKEY, ALT
+    "E", 0x11, VIRTKEY, ALT
+    "O", 0x12, VIRTKEY, ALT
+    "V", 0x13, VIRTKEY, ALT
+    "H", 0x14, VIRTKEY, ALT
+}
+
+STRINGTABLE
+LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
+{
+    0xA0 "Always on &top"
+}
+
+1 MENU
+LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
+{
+    POPUP "&File"
+    {
+        MENUITEM "&New\tCtrl+N", 0x1001
+        MENUITEM "&Open…\tCtrl+O", 0x1002
+        MENUITEM "&Save\tCtrl+S", 0x1003
+        MENUITEM "Save &As…", 0x1004
+        MENUITEM SEPARATOR
+
+        MENUITEM "E&xit\tAlt+F4", IDCLOSE
+    }
+    POPUP "&Edit"
+    {
+        MENUITEM "Edit menu item", 0x2001
+        MENUITEM "Edit menu item", 0x2002
+        MENUITEM SEPARATOR
+        MENUITEM "Edit menu item", 0x2003
+        MENUITEM "Edit menu item", 0x2004
+    }
+    POPUP "F&ormat"
+    {
+        MENUITEM "Format menu item", 0x3001
+        MENUITEM "Format menu item", 0x3002
+        MENUITEM SEPARATOR
+        MENUITEM "Format menu item", 0x3003
+        MENUITEM "Format menu item", 0x3004
+    }
+    POPUP "&View"
+    {
+        MENUITEM "View menu item", 0x4001
+        MENUITEM "View menu item", 0x4002
+        MENUITEM SEPARATOR
+        MENUITEM "View menu item", 0x4003
+        MENUITEM "View menu item", 0x4004
+    }
+    POPUP "&Help"
+    {
+        MENUITEM "...", 0x5001
+        MENUITEM "Check for updates", 0x5002
+        MENUITEM SEPARATOR
+        MENUITEM "&About…", 0x5009
+    }
+}

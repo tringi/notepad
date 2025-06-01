@@ -1,0 +1,73 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="Notepad.cpp" />
+    <ClCompile Include="Windows\Windows_AccessibilityTextScale.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\Windows_FileID.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\Windows_Font.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\Windows_SetThreadName.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\Windows_LoadIcon.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\Windows_Window.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\Windows_WindowPresentation.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Notepad_Window.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Notepad.rc" />
+    <ResourceCompile Include="Notepad-vi.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Windows">
+      <UniqueIdentifier>{ec72775a-67f8-4963-a357-fd76ee784937}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Windows\Windows_AccessibilityTextScale.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_FileID.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_Font.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_SetThreadName.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_Symbol.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_GetCurrentModuleHandle.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_LoadIcon.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_Window.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_WindowPresentation.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Notepad_Window.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Windows\Windows_Symbol.tcc">
+      <Filter>Windows</Filter>
+    </None>
+    <None Include="Notepad.info" />
+  </ItemGroup>
+</Project>

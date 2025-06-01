@@ -1,0 +1,150 @@
+#include <Windows.h>
+#include <objbase.h>
+#include <CommCtrl.h>
+#include <Uxtheme.h>
+#include <DwmAPI.h>
+#include <io.h>
+#include <fcntl.h>
+
+#include "Notepad_Window.hpp"
+#include "Windows/Windows_SetThreadName.hpp"
+
+#include <list>
+#include <cwchar>
+
+const wchar_t * szVersionInfo [9];
+
+ATOM InitializeGUI (HINSTANCE);
+bool InitVersionInfoStrings (HINSTANCE);
+
+int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
+    Windows::SetThreadName (L"GUI");
+
+    AttachConsole (ATTACH_PARENT_PROCESS);
+    if (IsDebuggerPresent ()) {
+        AllocConsole ();
+    }
+
+    // trim lpCmdLine, remove quotes (if any)
+    // if not empty, get file ID 
+    //   - file may not exist, ask to create
+    //   - have file size, ask other instances if they can map it (if not, reuse this one)
+
+    SetLastError (0);
+    if (InitVersionInfoStrings (hInstance) && InitializeGUI (hInstance)) {
+        const auto hAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (1));
+
+        new Window;
+
+        MSG message {};
+        while (GetMessage (&message, NULL, 0u, 0u)) {
+
+            switch (message.message) {
+                case WM_SYSKEYDOWN:
+                    switch (message.wParam) {
+                        case VK_MENU:
+                            if (auto root = GetAncestor (message.hwnd, GA_ROOT)) {
+                                PostMessage (root, Window::Message::ShowAccelerators, 0, 0);
+                            }
+                            break;
+                    }
+            }
+
+            if (message.hwnd) {
+                auto root = GetAncestor (message.hwnd, GA_ROOT);
+                if (TranslateAccelerator (root, hAccelerators, &message) || IsDialogMessage (root, &message))
+                    continue;
+
+            } else {
+                switch (message.message) {
+                    case WM_COMMAND:
+                        switch (message.wParam) {
+                            case 0xCF:
+                                EnumThreadWindows (GetCurrentThreadId (),
+                                                   [] (HWND hWnd, LPARAM lParam) {
+                                                       PostMessage (hWnd, WM_CLOSE, 0, 0);
+                                                       return TRUE;
+                                                   }, NULL);
+                                break;
+                        }
+                        break;
+                }
+            }
+            TranslateMessage (&message);
+            DispatchMessage (&message);
+        }
+
+        CoUninitialize ();
+        return (int) message.wParam;
+    } else
+        return (int) GetLastError ();
+}
+
+bool InitVersionInfoStrings (HINSTANCE hInstance) {
+    if (HRSRC hRsrc = FindResource (hInstance, MAKEINTRESOURCE (1), RT_VERSION)) {
+        if (HGLOBAL hGlobal = LoadResource (hInstance, hRsrc)) {
+            auto data = LockResource (hGlobal);
+            auto size = SizeofResource (hInstance, hRsrc);
+
+            if (data && (size >= 92)) {
+                struct Header {
+                    WORD wLength;
+                    WORD wValueLength;
+                    WORD wType;
+                };
+
+                // StringFileInfo
+                //  - not searching, leap of faith that the layout is stable
+
+                auto pstrings = static_cast <const unsigned char *> (data) + 76
+                                + reinterpret_cast <const Header *> (data)->wValueLength;
+                auto p = reinterpret_cast <const wchar_t *> (pstrings) + 12;
+                auto e = p + reinterpret_cast <const Header *> (pstrings)->wLength / 2 - 12;
+                auto i = 0u;
+
+                const Header * header = nullptr;
+                do {
+                    header = reinterpret_cast <const Header *> (p);
+                    auto length = header->wLength / 2;
+
+                    if (header->wValueLength) {
+                        szVersionInfo [i++] = p + length - header->wValueLength;
+                    } else {
+                        szVersionInfo [i++] = L"";
+                    }
+
+                    p += length;
+                    if (length % 2) {
+                        ++p;
+                    }
+                } while ((p < e) && (i < sizeof szVersionInfo / sizeof szVersionInfo [0]) && header->wLength);
+
+                if (i == sizeof szVersionInfo / sizeof szVersionInfo [0])
+                    return true;
+            }
+        }
+    }
+    return true;
+}
+
+ATOM InitializeGUI (HINSTANCE hInstance) {
+    const INITCOMMONCONTROLSEX classes = {
+        sizeof (INITCOMMONCONTROLSEX),
+        ICC_STANDARD_CLASSES | ICC_COOL_CLASSES | ICC_PROGRESS_CLASS | ICC_BAR_CLASSES | ICC_LINK_CLASS
+    };
+
+    InitCommonControls ();
+    if (!InitCommonControlsEx (&classes))
+        return false;
+
+    switch (CoInitializeEx (NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)) {
+        case S_OK:
+        case S_FALSE: // already initialized
+            break;
+        default:
+            return false;
+    }
+
+    Windows::WindowPresentation::Initialize ();
+    return Window::Initialize (hInstance);
+}

@@ -11,6 +11,7 @@
 * simple lists management (Ctrl+Shift+L)
 * do not hold up shutdown
 * performance requirement: blink into existence
+* zoom
 
 **Maybe:**
 
@@ -19,9 +20,9 @@
 * row numbers
 * autosave
 * tabs
-* basic markdown?
+* option to run in single process
 
 **Questions:**
 
-* should try for it to be vcruntime-less?
-
+* should try for it to be vcruntime-less binary?
+* Windows 10+
