@@ -262,6 +262,10 @@ LRESULT Windows::Window::Dispatch (UINT message, WPARAM wParam, LPARAM lParam) {
             return this->OnMenuClose ((HMENU) wParam, HIWORD (lParam));
     }
 
+    if (message == this->GetGlobalRefreshNotificationMessage ()) {
+        this->OnVisualEnvironmentChange ();
+    }
+
     if (message >= WM_USER && message <= 0x7FFF) {
         return this->OnUserMessage (message, wParam, lParam);
     }
@@ -272,9 +276,6 @@ LRESULT Windows::Window::Dispatch (UINT message, WPARAM wParam, LPARAM lParam) {
         return this->OnRegisteredMessage (message, wParam, lParam);
     }
 
-    if (message == this->GetGlobalRefreshNotificationMessage ()) {
-        this->OnVisualEnvironmentChange ();
-    }
     if (auto result = this->ProcessPresentationMessage (this->hWnd, message, wParam, lParam)) {
         return *result;
     }

@@ -275,6 +275,7 @@ void Windows::WindowPresentation::RefreshGlobals () {
     }
 
     if (global.contrast) {
+        global.dark = FALSE;
         global.prevalence = true;
         global.active = GetSysColor (COLOR_ACTIVECAPTION);
         global.inactive = GetSysColor (COLOR_INACTIVECAPTION);
