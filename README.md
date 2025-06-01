@@ -1,26 +1,31 @@
 # Notepad
 *classic fast notepad with a few modern features*
 
+## Goals
+
+The first, foremost and only goal of this project is to implement extremely lean version of the classic Windows Notepad.
+It's not intended to compete with Notepad++, PSPad, or any other intentional and great editors out there.
+Instead it aims to provide classic old school Notepad, instant and compact, with the most common pain points fixed.
+
 ## TODO
 
-* classic Win32 design (Win10/LTSC/Server basis)
-* support Dark Mode
-* remember position per file
+* DONE: support Dark Mode
+* remember window position per file
 * don't choke on large files (memory mapping)
 * prevent editing the same file twice (locking)
-* simple lists management (Ctrl+Shift+L)
 * do not hold up shutdown
 * performance requirement: blink into existence
-* zoom
+* respect user font scale settings and allow change
 
 **Maybe:**
 
-* regex search and replace
-* more than one undo step
-* row numbers
 * autosave
-* tabs
+* row numbers
+* more than one undo step
 * option to run in single process
+* regex search and replace?
+* simple lists management (Ctrl+Shift+L)
+* tabs?
 
 **Questions:**
 
