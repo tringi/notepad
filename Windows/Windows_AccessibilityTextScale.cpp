@@ -2,39 +2,17 @@
 #include <VersionHelpers.h>
 
 bool Windows::TextScale::initialize () {
-    if (IsWindows10OrGreater ()) { // TODO: which build?
-        this->hEvent = CreateEvent (NULL, FALSE, FALSE, NULL);
-        if (this->hEvent)
-            if (this->ReOpenKeys ()) {
-                RegisterWaitForSingleObject (&hThreadPoolWait, this->hEvent,
-                                             [] (PVOID self, BOOLEAN) {
-                                                 if (static_cast <Windows::TextScale *> (self)->OnEvent ()) {
-                                                     // SendMessage ((HWND) hWnd, WM_SETTINGCHANGE, 0, 0);
-                                                 }
-                                             }, this, INFINITE, 0);
-                return true;
-            }
-    }
-    return false;
+    this->current = 100;
+    this->hEvent = CreateEvent (NULL, FALSE, FALSE, NULL);
+    if (this->hEvent)
+        return this->ReOpenKeys ();
+    else
+        return false;
 }
 
 void Windows::TextScale::terminate () {
-    if (this->hThreadPoolWait) {
-        if (UnregisterWaitEx (this->hThreadPoolWait, INVALID_HANDLE_VALUE)) {
-            CloseHandle (this->hEvent);
-        }
-    } else {
-        CloseHandle (this->hEvent);
-    }
+    CloseHandle (this->hEvent);
     RegCloseKey (this->hKey);
-
-    this->hThreadPoolWait = NULL;
-    this->hEvent = NULL;
-    this->hKey = NULL;
-}
-
-Windows::TextScale::~TextScale () {
-    this->terminate ();
 }
 
 bool Windows::TextScale::OnEvent () {

@@ -24,20 +24,22 @@ namespace Windows {
             lf.lfHeight = MulDiv (lf.lfHeight, this->current, 100);
         }
 
-        ~TextScale ();
+        // OnEvent
+        //  - should be called whenever this->hEvent gets signalled
+        //  - returns 'true' if the scale factor might have changed, and application should redraw the GUI
+        //
+        bool OnEvent ();
+
+        // API
+
+        inline DWORD GetCurrentScale () const { return this->current; }
+        inline HANDLE GetEventHandle () const { return this->hEvent; }
 
     private:
         HKEY    hKey = NULL; // HKCU\SOFTWARE\Microsoft[\Accessibility]
         bool    parent = false; // if true, we are waiting for Accessibilty subkey to be created first
         DWORD   current = 100;
         HANDLE  hEvent = NULL;
-        HANDLE  hThreadPoolWait = NULL;
-
-        // OnEvent
-        //  - should be called whenever this->hEvent gets signalled
-        //  - returns 'true' if the scale factor might have changed, and application should redraw the GUI
-        //
-        bool    OnEvent ();
 
         bool    ReOpenKeys ();
         DWORD   GetCurrentTextScaleFactor () const;
