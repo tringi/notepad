@@ -338,10 +338,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Notepad.cpp" />
+    <ClCompile Include="Notepad_Settings.cpp" />
     <ClCompile Include="Notepad_Window.cpp" />
     <ClCompile Include="Windows\Windows_AccessibilityTextScale.cpp" />
+    <ClCompile Include="Windows\Windows_CreateSolidBrushEx.cpp" />
     <ClCompile Include="Windows\Windows_FileID.cpp" />
     <ClCompile Include="Windows\Windows_Font.cpp" />
+    <ClCompile Include="Windows\Windows_IsWindowsBuildOrGreater.cpp" />
     <ClCompile Include="Windows\Windows_LoadIcon.cpp" />
     <ClCompile Include="Windows\Windows_SetThreadName.cpp" />
     <ClCompile Include="Windows\Windows_Window.cpp" />
@@ -352,11 +355,14 @@
     <ResourceCompile Include="Notepad.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Notepad_Settings.hpp" />
     <ClInclude Include="Notepad_Window.hpp" />
     <ClInclude Include="Windows\Windows_AccessibilityTextScale.hpp" />
+    <ClInclude Include="Windows\Windows_CreateSolidBrushEx.hpp" />
     <ClInclude Include="Windows\Windows_FileID.hpp" />
     <ClInclude Include="Windows\Windows_Font.hpp" />
     <ClInclude Include="Windows\Windows_GetCurrentModuleHandle.hpp" />
+    <ClInclude Include="Windows\Windows_IsWindowsBuildOrGreater.hpp" />
     <ClInclude Include="Windows\Windows_LoadIcon.hpp" />
     <ClInclude Include="Windows\Windows_SetThreadName.hpp" />
     <ClInclude Include="Windows\Windows_Symbol.hpp" />

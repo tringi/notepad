@@ -1,5 +1,10 @@
 #include "Notepad_Window.hpp"
 #include "Windows\Windows_Symbol.hpp"
+#include "Windows\Windows_AccessibilityTextScale.hpp"
+#include "Windows\Windows_CreateSolidBrushEx.hpp"
+#include "Windows\Windows_IsWindowsBuildOrGreater.hpp"
+
+extern Windows::TextScale scale;
 
 namespace {
     HMODULE LoadIconModule () {
@@ -41,15 +46,27 @@ namespace {
         }
         return DefSubclassProc (hWnd, message, wParam, lParam);
     }
-
+    inline bool IsMenuItemChecked (HMENU menu, UINT id) {
+        return GetMenuState (menu, id, MF_BYCOMMAND) & MF_CHECKED;
+    }
+    inline bool IsWindows11OrGreater () {
+        return Windows::IsWindowsBuildOrGreater (22000);
+    }
 }
 
 ATOM Window::Initialize (HINSTANCE hInstance) {
     instance = hInstance;
     
+    Window::iconsrc = LoadIconModule ();
     Window::atom = Windows::Window::Initialize (hInstance, L"TRIMCORE.NOTEPAD");
     Window::menu = LoadMenu (hInstance, MAKEINTRESOURCE (1));
-    Window::iconsrc = LoadIconModule ();
+
+    if (!IsWindows11OrGreater ()) {
+        EnableMenuItem (menu, 0x3010, MF_BYCOMMAND | MF_GRAYED);
+        CheckMenuItem (menu, 0x3010, MF_BYCOMMAND | MF_CHECKED);
+        EnableMenuItem (menu, 0x3011, MF_BYCOMMAND | MF_GRAYED);
+        CheckMenuItem (menu, 0x3011, MF_BYCOMMAND | MF_CHECKED);
+    }
 
     atomCOMBOBOX = GetClassAtom (L"COMBOBOX");
     return Window::atom;
@@ -65,10 +82,16 @@ Window::Window ()
     
     // TODO: resolve window position (empty => last closed, file => load from file's ADS), ensure visible on screen
 
-    auto hWnd = this->Create (this->instance, this->atom, style, extra /* &r */);
+    this->Create (this->instance, this->atom, style, extra /* &r */);
 }
 
 LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
+    ChangeWindowMessageFilter (Window::Message::UpdateSettings, MSGFLT_ADD);
+
+    if (IsWindows11OrGreater ()) {
+        DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_MAINWINDOW;
+        DwmSetWindowAttribute (hWnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof backdrop);
+    }
 
     if (auto menu = GetSystemMenu (this->hWnd, FALSE)) {
         AppendMenu (menu, MF_SEPARATOR, 0, NULL);
@@ -203,6 +226,11 @@ LRESULT Window::OnDrawItem (WPARAM id, const DRAWITEMSTRUCT * draw) {
     }
 }
 
+LRESULT Window::OnEraseBackground (HDC hDC) {
+    //SetDCBrushColor (hDC, 0);
+    return NULL; // (LRESULT) GetStockObject (DC_BRUSH);
+}
+
 SIZE GetClientSize (HWND hWnd) {
     RECT r;
     if (GetClientRect (hWnd, &r)) {
@@ -241,7 +269,11 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
 
 void DeferWindowPos (HDWP & hDwp, HWND hCtrl, const RECT & r, UINT flags = 0) {
     if (hCtrl) {
-        hDwp = DeferWindowPos (hDwp, hCtrl, NULL, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOACTIVATE | SWP_NOZORDER | flags);
+        if (auto hNewDwp = DeferWindowPos (hDwp, hCtrl, NULL,
+                                           r.left, r.top, r.right - r.left, r.bottom - r.top,
+                                           SWP_NOACTIVATE | SWP_NOZORDER | flags)) {
+            hDwp = hNewDwp;
+        }
     }
 }
 
@@ -259,6 +291,10 @@ LRESULT Window::OnPositionChange (const WINDOWPOS & position) {
 
         auto yMenuBar = szMenuBar.cy;
         auto ySeparator = 1;
+        if (!this->global.dark) {
+            yMenuBar = 0;
+            ySeparator = 0;
+        }
         auto yStatusBar = UpdateStatusBar (hStatusBar, this->dpi, client);
 
         if (HDWP hDwp = BeginDeferWindowPos (4)) {
@@ -270,8 +306,10 @@ LRESULT Window::OnPositionChange (const WINDOWPOS & position) {
         }
 
         MARGINS margins = { 0,0,0,0 };
-        margins.cyBottomHeight = yStatusBar;
-
+        if (this->global.dark) {
+            margins.cyTopHeight = yMenuBar; // ???
+            margins.cyBottomHeight = yStatusBar;
+        }
         DwmExtendFrameIntoClientArea (hWnd, &margins);
         InvalidateRect (hWnd, NULL, TRUE);
     }
@@ -339,6 +377,18 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
             new Window;
             break;
 
+        case 0x3010:
+        case 0x3011:
+            EnumWindows ([] (HWND hWnd, LPARAM lParam) {
+                if (auto atom = GetClassWord (hWnd, GCW_ATOM)) {
+                    if (atom == Window::atom) {
+                        PostMessage (hWnd, Window::Message::UpdateSettings, 0, lParam);
+                    }
+                }
+                return TRUE;
+            }, id | (IsMenuItemChecked (menu, id) ? 0 : 0x8000'0000));
+            break;
+
         case 0x10: case 0x11: case 0x12: case 0x13:
         case 0x14: case 0x15: case 0x16: case 0x17:
         case 0x18: case 0x19: case 0x1A: case 0x1B:
@@ -389,9 +439,15 @@ LRESULT Window::OnNotify (WPARAM id, NMHDR * nm) {
 
                     switch (nmtb->nmcd.dwDrawStage) {
                         case CDDS_PREPAINT:
-                            SetDCBrushColor (nmtb->nmcd.hdc,this->global.background);
+                            if (this->global.dark) {
+                                if (auto hBrush = Windows::CreateSolidBrushEx (0x000000, 128)) {
+                                    FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, hBrush);
+                                    DeleteObject (hBrush);
+                                    return CDRF_NOTIFYITEMDRAW;
+                                }
+                            }
+                            SetDCBrushColor (nmtb->nmcd.hdc, this->global.background);
                             FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, (HBRUSH) GetStockObject (DC_BRUSH));
-                            nmtb->clrText = this->global.text;
                             return CDRF_NOTIFYITEMDRAW;
 
                         case CDDS_ITEMPREPAINT:
@@ -413,10 +469,30 @@ LRESULT Window::OnNotify (WPARAM id, NMHDR * nm) {
     return 0;
 }
 
-LRESULT Window::OnUserMessage (UINT message, WPARAM, LPARAM) {
+LRESULT Window::OnUserMessage (UINT message, WPARAM, LPARAM lParam) {
     switch (message) {
         case Message::ShowAccelerators:
             this->ShowMenuAccelerators (true);
+            break;
+        case Message::UpdateFontSize:
+            this->OnDpiChange (NULL, 0);
+            break;
+
+        case Message::UpdateSettings:
+            auto id = LOWORD (lParam);
+            bool set = lParam & 0x8000'0000;
+
+            switch (id) {
+                case 0x3010: {
+                    COLORREF clr = set ? DWMWA_COLOR_DEFAULT : DWMWA_COLOR_NONE;
+                    DwmSetWindowAttribute (hWnd, DWMWA_CAPTION_COLOR, &clr, sizeof clr);
+                } break;
+                case 0x3011: {
+                    DWM_WINDOW_CORNER_PREFERENCE corners = set ? DWMWCP_DONOTROUND : DWMWCP_DEFAULT;
+                    DwmSetWindowAttribute (hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corners, sizeof corners);
+                } break;
+            }
+            CheckMenuItem (menu, id, set ? MF_CHECKED : 0);
             break;
     }
     return 0;
@@ -442,7 +518,7 @@ void Window::RecreateMenuButtons (HWND hMenuBar) {
     SendMessage (hMenuBar, TB_AUTOSIZE, 0, 0);
 }
 
-LRESULT Window::OnDpiChange (RECT * r, LONG) {
+LRESULT Window::OnDpiChange (RECT *, LONG) {
     auto dpiNULL = Windows::GetDPI (NULL);
     if (auto hMenuBar = GetDlgItem (this->hWnd, ID::MENUBAR)) {
         SendMessage (hMenuBar, TB_SETPADDING, 0, MAKELPARAM (8 * this->dpi / dpiNULL, 4 * this->dpi / dpiNULL));
@@ -450,7 +526,7 @@ LRESULT Window::OnDpiChange (RECT * r, LONG) {
     }
 
     wchar_t aaa [64];
-    std::swprintf (aaa, 64, L"%u %u", this->dpi, dpiNULL);
+    std::swprintf (aaa, 64, L"DPI %u/%u, SCALE %u", this->dpi, dpiNULL, scale.GetCurrentScale ());
     SetDlgItemText (this->hWnd, ID::EDITOR, aaa);
     return 0;
 }
@@ -470,6 +546,8 @@ BOOL WINAPI UpdateWindowTreeTheme (HWND hCtrl, LPARAM param) {
 
 LRESULT Window::OnVisualEnvironmentChange () {
     EnumChildWindows (this->hWnd, UpdateWindowTreeTheme, (LPARAM) this->global.dark);
+
+    SetMenu (this->hWnd, this->global.dark ? NULL : this->menu);
     return FALSE;
 }
 

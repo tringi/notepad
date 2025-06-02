@@ -1,5 +1,5 @@
-#ifndef NOTEPAD_WINDOW_H
-#define NOTEPAD_WINDOW_H
+#ifndef NOTEPAD_WINDOW_HPP
+#define NOTEPAD_WINDOW_HPP
 
 #include "Windows/Windows_Window.hpp"
 
@@ -35,6 +35,8 @@ public:
     struct Message {
         enum : WORD {
             ShowAccelerators = WM_USER + 1,
+            UpdateFontSize = WM_USER + 2,
+            UpdateSettings = WM_USER + 3,
         };
     };
 
@@ -50,7 +52,7 @@ private:
     virtual LRESULT OnGetMinMaxInfo (MINMAXINFO *) override;
     virtual LRESULT OnPositionChange (const WINDOWPOS &) override;
     virtual LRESULT OnDpiChange (RECT * r, LONG previous) override;
-    virtual LRESULT OnEraseBackground (HDC) override { return false; }
+    virtual LRESULT OnEraseBackground (HDC) override;
     virtual LRESULT OnDrawItem (WPARAM id, const DRAWITEMSTRUCT *) override;
     virtual LRESULT OnEndSession (WPARAM ending, LPARAM flags) override;
     virtual LRESULT OnClose (WPARAM wParam) override;
@@ -67,7 +69,7 @@ private:
     LONG UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE size);
 
 public:
-    bool IsDark () const { return this->global.dark; }
+    static bool IsDark () { return global.dark; }
 
 private:
     Window (const Window &) = delete;

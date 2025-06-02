@@ -24,6 +24,13 @@
       <Filter>Windows</Filter>
     </ClCompile>
     <ClCompile Include="Notepad_Window.cpp" />
+    <ClCompile Include="Notepad_Settings.cpp" />
+    <ClCompile Include="Windows\Windows_CreateSolidBrushEx.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\Windows_IsWindowsBuildOrGreater.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Notepad.rc" />
@@ -63,6 +70,13 @@
       <Filter>Windows</Filter>
     </ClInclude>
     <ClInclude Include="Notepad_Window.hpp" />
+    <ClInclude Include="Notepad_Settings.hpp" />
+    <ClInclude Include="Windows\Windows_CreateSolidBrushEx.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_IsWindowsBuildOrGreater.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Windows\Windows_Symbol.tcc">

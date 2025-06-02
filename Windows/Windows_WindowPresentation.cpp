@@ -52,9 +52,9 @@ LRESULT Windows::WindowPresentation::RefreshWindowPresentation (HWND hWnd, UINT 
     }
 
     if (winver.build >= 22543) {
-        DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_MAINWINDOW; // DWMSBT_TABBEDWINDOW;
+        DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_MAINWINDOW;
         DwmSetWindowAttribute (hWnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof backdrop);
-    }//*/
+    }
 
     if (winver.build >= 20161) {
         DwmSetWindowAttribute (hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &global.dark, sizeof global.dark);

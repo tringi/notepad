@@ -5,19 +5,22 @@
 1 ACCELERATORS
 {
     "^N", 0x1001 // Ctrl+N
-    // "^C", 0xCC // Ctrl+C - copy screenshot clipboard
+    // "^C", 0xCC // Ctrl+C
     VK_F4, 0xCF, VIRTKEY, ALT, CONTROL // Ctrl+Alt+F4 - quit whole process
 
     // F1 - help: visit trimcore
     // Ctrl+0 - 100% zoom (also Ctrl+*), increment: (Ctrl++,Ctrl+=), decrement (Ctrl+-)
 
-    VK_F11, 0xFB, VIRTKEY // F11 - full screen, TODO: Win+Shift+Enter
-    // VK_RETURN, 0xFB, VIRTKEY, ALT
+    VK_F11, 0xFB, VIRTKEY // F11 - full screen, TODO: Win+Shift+Enter?
     // VK_F12, 0xFC, VIRTKEY
+}
 
-    // Menu
-    //  - reserved 0x10...0x1F
+// Menu Accelerators
+//  - reserved 0x10...0x1F
+//  - should match the & accelerator
+//  - used only in dark mode
 
+2 ACCELERATORS {
     "F", 0x10, VIRTKEY, ALT
     "E", 0x11, VIRTKEY, ALT
     "O", 0x12, VIRTKEY, ALT
@@ -36,41 +39,67 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
 {
     POPUP "&File"
     {
-        MENUITEM "&New\tCtrl+N", 0x1001
-        MENUITEM "&Open…\tCtrl+O", 0x1002
-        MENUITEM "&Save\tCtrl+S", 0x1003
-        MENUITEM "Save &As…", 0x1004
+        MENUITEM "&New\tCtrl+N",    0x1001
+        MENUITEM "&Open…\tCtrl+O",  0x1002
+        MENUITEM "&Save\tCtrl+S",   0x1003
+        MENUITEM "Save &As…",       0x1004
         MENUITEM SEPARATOR
-
-        MENUITEM "E&xit\tAlt+F4", IDCLOSE
+        MENUITEM "Page Set&up…",    0x1008
+        MENUITEM "&Print…\tCtrl+P", 0x1009
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit\tAlt+F4",   IDCLOSE
     }
     POPUP "&Edit"
     {
-        MENUITEM "Edit menu item", 0x2001
-        MENUITEM "Edit menu item", 0x2002
+        MENUITEM "&Undo\tCtrl+Z", 0x2001
+        POPUP "Edit &History" {
+            MENUITEM "...", 0x2100
+        }
         MENUITEM SEPARATOR
-        MENUITEM "Edit menu item", 0x2003
-        MENUITEM "Edit menu item", 0x2004
+        MENUITEM "Cu&t\tCtrl+X",    0x2002
+        MENUITEM "&Copy\tCtrl+C",   0x2003
+        MENUITEM "&Paste\tCtrl+V",  0x2004
+        MENUITEM "De&lete\tDel",    0x2005
+        MENUITEM SEPARATOR
+        MENUITEM "Select &All\tCtrl+A", 0x2006
+        MENUITEM SEPARATOR
+        MENUITEM "&Find…\tCtrl+F",  0x2010
+        MENUITEM "Find &Next\tF3",  0x2011
+        MENUITEM "&Replace…\tCtrl+H", 0x2012
+        MENUITEM "&Go To…\tCtrl+G", 0x201F
+        MENUITEM SEPARATOR
+        MENUITEM "Insert &Date/Time\tF5", 0x2020
+        MENUITEM "Insert ...", 0x2021
     }
     POPUP "F&ormat"
     {
-        MENUITEM "Format menu item", 0x3001
-        MENUITEM "Format menu item", 0x3002
+        MENUITEM "&Word wrap",  0x300F
+        MENUITEM "&Font…",      0x3000
+        MENUITEM "&Background…", 0x3001
         MENUITEM SEPARATOR
-        MENUITEM "Format menu item", 0x3003
-        MENUITEM "Format menu item", 0x3004
+        POPUP "File &Properties" {
+            MENUITEM "&Font…",      0x3030
+            MENUITEM "&Background…", 0x3031
+            MENUITEM "Border &Color…", 0x3032
+            MENUITEM SEPARATOR
+            MENUITEM "&Erase", 0x303F
+        }
+        POPUP "&Window" {
+            MENUITEM "Classic Caption", 0x3010
+            MENUITEM "Square Corners", 0x3011
+        }
+        POPUP "&Application" {
+            MENUITEM "Separate processes", 0x3020
+        }
     }
     POPUP "&View"
     {
-        MENUITEM "View menu item", 0x4001
-        MENUITEM "View menu item", 0x4002
-        MENUITEM SEPARATOR
-        MENUITEM "View menu item", 0x4003
-        MENUITEM "View menu item", 0x4004
+        MENUITEM "&Status Bar",     0x4001
+        MENUITEM "&Line Numbers",   0x4002
     }
     POPUP "&Help"
     {
-        MENUITEM "...", 0x5001
+        MENUITEM "", 0x5001
         MENUITEM "Check for updates", 0x5002
         MENUITEM SEPARATOR
         MENUITEM "&About…", 0x5009

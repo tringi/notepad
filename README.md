@@ -31,3 +31,7 @@ Instead it aims to provide classic old school Notepad, instant and compact, with
 
 * should try for it to be vcruntime-less binary?
 * Windows 10+
+
+**Known bugs:**
+
+* changing text scaling fails to update dark menubar
