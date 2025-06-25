@@ -33,6 +33,7 @@ namespace Windows {
         static void Initialize ();
         static void RefreshGlobals ();
         static UINT_PTR GetGlobalRefreshNotificationMessage ();
+        static BOOL SetCompositionAttribute (HWND hWnd, ULONG attr, PVOID data, ULONG size);
 
     protected:
         template <std::size_t CacheSize = 8>

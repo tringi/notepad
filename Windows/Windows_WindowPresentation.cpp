@@ -43,6 +43,16 @@ UINT_PTR Windows::WindowPresentation::GetGlobalRefreshNotificationMessage () {
     return GlobalRefreshMessage;
 }
 
+BOOL Windows::WindowPresentation::SetCompositionAttribute (HWND hWnd, ULONG a, PVOID data, ULONG size) {
+    if (ptrSetWindowCompositionAttribute && (winver.build >= 18875)) {
+        CompositionAttributeData attr = { a, data, size };
+        return ptrSetWindowCompositionAttribute (hWnd, &attr);
+    } else {
+        SetLastError (ERROR_CALL_NOT_IMPLEMENTED);
+        return FALSE;
+    }
+}
+
 LRESULT Windows::WindowPresentation::RefreshWindowPresentation (HWND hWnd, UINT dpiNULL) {
 
     // dark mode
@@ -60,8 +70,7 @@ LRESULT Windows::WindowPresentation::RefreshWindowPresentation (HWND hWnd, UINT 
         DwmSetWindowAttribute (hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &global.dark, sizeof global.dark);
     } else
     if (winver.build >= 18875 && ptrSetWindowCompositionAttribute) {
-        CompositionAttributeData attr = { 26, &global.dark, sizeof global.dark }; // WCA_USEDARKMODECOLORS
-        ptrSetWindowCompositionAttribute (hWnd, &attr);
+        SetCompositionAttribute (hWnd, 26, &global.dark, sizeof global.dark); // WCA_USEDARKMODECOLORS
     } else
     if (winver.build >= 14393) {
         DwmSetWindowAttribute (hWnd, 0x13, &global.dark, sizeof global.dark);
