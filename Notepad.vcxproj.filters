@@ -31,6 +31,12 @@
     <ClCompile Include="Windows\Windows_IsWindowsBuildOrGreater.cpp">
       <Filter>Windows</Filter>
     </ClCompile>
+    <ClCompile Include="Windows\Windows_GetFullPath.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\Windows_DrawTextComposited.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Notepad.rc" />
@@ -75,6 +81,12 @@
       <Filter>Windows</Filter>
     </ClInclude>
     <ClInclude Include="Windows\Windows_IsWindowsBuildOrGreater.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_GetFullPath.hpp">
+      <Filter>Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\Windows_DrawTextComposited.hpp">
       <Filter>Windows</Filter>
     </ClInclude>
   </ItemGroup>

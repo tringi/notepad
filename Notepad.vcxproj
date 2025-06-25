@@ -39,7 +39,9 @@
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
-    <VCToolsVersion>14.43.34808</VCToolsVersion>
+    <VCToolsVersion>14.44.35207</VCToolsVersion>
+    <EnableASAN>true</EnableASAN>
+    <EnableFuzzer>false</EnableFuzzer>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -47,21 +49,25 @@
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
-    <VCToolsVersion>14.43.34808</VCToolsVersion>
+    <VCToolsVersion>14.44.35207</VCToolsVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
-    <VCToolsVersion>14.43.34808</VCToolsVersion>
+    <VCToolsVersion>14.44.35207</VCToolsVersion>
+    <EnableASAN>true</EnableASAN>
+    <EnableFuzzer>false</EnableFuzzer>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
-    <VCToolsVersion>14.43.34808</VCToolsVersion>
+    <VCToolsVersion>14.44.35207</VCToolsVersion>
+    <EnableASAN>true</EnableASAN>
+    <EnableFuzzer>false</EnableFuzzer>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -69,7 +75,7 @@
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
-    <VCToolsVersion>14.43.34808</VCToolsVersion>
+    <VCToolsVersion>14.44.35207</VCToolsVersion>
     <UseOfMfc>false</UseOfMfc>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
@@ -78,7 +84,7 @@
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
-    <VCToolsVersion>14.43.34808</VCToolsVersion>
+    <VCToolsVersion>14.44.35207</VCToolsVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -176,10 +182,11 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <AssemblerOutput>All</AssemblerOutput>
-      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <ControlFlowGuard>false</ControlFlowGuard>
       <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
+      <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -266,10 +273,11 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <AssemblerOutput>All</AssemblerOutput>
-      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <ControlFlowGuard>false</ControlFlowGuard>
       <AdditionalOptions>/arch:SSE4.2 %(AdditionalOptions)</AdditionalOptions>
+      <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -308,9 +316,10 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <AssemblerOutput>All</AssemblerOutput>
-      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <ControlFlowGuard>false</ControlFlowGuard>
+      <Optimization>MaxSpeed</Optimization>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -342,8 +351,10 @@
     <ClCompile Include="Notepad_Window.cpp" />
     <ClCompile Include="Windows\Windows_AccessibilityTextScale.cpp" />
     <ClCompile Include="Windows\Windows_CreateSolidBrushEx.cpp" />
+    <ClCompile Include="Windows\Windows_DrawTextComposited.cpp" />
     <ClCompile Include="Windows\Windows_FileID.cpp" />
     <ClCompile Include="Windows\Windows_Font.cpp" />
+    <ClCompile Include="Windows\Windows_GetFullPath.cpp" />
     <ClCompile Include="Windows\Windows_IsWindowsBuildOrGreater.cpp" />
     <ClCompile Include="Windows\Windows_LoadIcon.cpp" />
     <ClCompile Include="Windows\Windows_SetThreadName.cpp" />
@@ -359,9 +370,11 @@
     <ClInclude Include="Notepad_Window.hpp" />
     <ClInclude Include="Windows\Windows_AccessibilityTextScale.hpp" />
     <ClInclude Include="Windows\Windows_CreateSolidBrushEx.hpp" />
+    <ClInclude Include="Windows\Windows_DrawTextComposited.hpp" />
     <ClInclude Include="Windows\Windows_FileID.hpp" />
     <ClInclude Include="Windows\Windows_Font.hpp" />
     <ClInclude Include="Windows\Windows_GetCurrentModuleHandle.hpp" />
+    <ClInclude Include="Windows\Windows_GetFullPath.hpp" />
     <ClInclude Include="Windows\Windows_IsWindowsBuildOrGreater.hpp" />
     <ClInclude Include="Windows\Windows_LoadIcon.hpp" />
     <ClInclude Include="Windows\Windows_SetThreadName.hpp" />
