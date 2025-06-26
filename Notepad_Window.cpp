@@ -3,8 +3,13 @@
 #include "Windows\Windows_AccessibilityTextScale.hpp"
 #include "Windows\Windows_CreateSolidBrushEx.hpp"
 #include "Windows\Windows_IsWindowsBuildOrGreater.hpp"
+#include "Windows\Windows_GetCurrentModuleHandle.hpp"
+#include "Windows\Windows_DrawTextComposited.hpp"
+
+#include <commdlg.h>
 
 extern Windows::TextScale scale;
+static constexpr auto MAX_NT_PATH = 32768u;
 
 namespace {
     HMODULE LoadIconModule () {
@@ -21,7 +26,12 @@ namespace {
         return (ATOM) GetClassInfoEx (NULL, name, &wc);
     }
 
-    ATOM atomCOMBOBOX = 0;
+    inline bool IsMenuItemChecked (HMENU menu, UINT id) {
+        return GetMenuState (menu, id, MF_BYCOMMAND) & MF_CHECKED;
+    }
+    inline bool IsWindows11OrGreater () {
+        return Windows::IsWindowsBuildOrGreater (22000);
+    }
 
     LRESULT CALLBACK ProperBgSubclassProcedure (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
                                                 UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
@@ -29,36 +39,56 @@ namespace {
 
         switch (message) {
             case WM_ERASEBKGND:
-                if (self->IsDark ()) {
+                if (self->GetPresentation ().dark) {
                     RECT r;
                     if (GetClientRect (hWnd, &r)) {
-                        BOOL enabled;
-                        HBRUSH hBrush;
-                        if (SUCCEEDED (DwmIsCompositionEnabled (&enabled)) && enabled) {
-                            hBrush = (HBRUSH) GetStockObject (BLACK_BRUSH);
-                        } else {
-                            hBrush = (HBRUSH) SendMessage (GetParent (hWnd), WM_CTLCOLORBTN, wParam, (LPARAM) hWnd);
+                        HBRUSH hBrush = NULL;
+                        if (IsWindows11OrGreater ()) {
+                            uIdSubclass = 0;
                         }
-                        FillRect ((HDC) wParam, &r, hBrush);
+                        switch (uIdSubclass) {
+                            case 1: // Windows 10 dark menu background
+                                if (GetForegroundWindow () == GetParent (hWnd)) {
+                                    hBrush = Windows::CreateSolidBrushEx (self->GetPresentation ().active, 128);
+                                } else {
+                                    hBrush = Windows::CreateSolidBrushEx (self->GetPresentation ().inactive, 255);
+                                }
+                                break;
+                            case 0:
+                                BOOL enabled;
+                                if (SUCCEEDED (DwmIsCompositionEnabled (&enabled)) && enabled) {
+                                    hBrush = (HBRUSH) GetStockObject (BLACK_BRUSH);
+                                } else {
+                                    hBrush = (HBRUSH) SendMessage (GetParent (hWnd), WM_CTLCOLORBTN, wParam, (LPARAM) hWnd);
+                                }
+                                break;
+                        }
+                        if (hBrush) {
+                            FillRect ((HDC) wParam, &r, hBrush);
+                            switch (uIdSubclass) {
+                                case 1:
+                                    DeleteObject (hBrush);
+                            }
+                        }
                         return TRUE;
                     }
                 }
         }
         return DefSubclassProc (hWnd, message, wParam, lParam);
     }
-    inline bool IsMenuItemChecked (HMENU menu, UINT id) {
-        return GetMenuState (menu, id, MF_BYCOMMAND) & MF_CHECKED;
-    }
-    inline bool IsWindows11OrGreater () {
-        return Windows::IsWindowsBuildOrGreater (22000);
-    }
+
+    ATOM atomCOMBOBOX = 0;
+}
+
+ATOM Window::InitAtom (HINSTANCE hInstance) {
+    Window::atom = Windows::Window::Initialize (hInstance, L"TRIMCORE.NOTEPAD");
+    return Window::atom;
 }
 
 ATOM Window::Initialize (HINSTANCE hInstance) {
     instance = hInstance;
     
     Window::iconsrc = LoadIconModule ();
-    Window::atom = Windows::Window::Initialize (hInstance, L"TRIMCORE.NOTEPAD");
     Window::menu = LoadMenu (hInstance, MAKEINTRESOURCE (1));
 
     if (!IsWindows11OrGreater ()) {
@@ -80,7 +110,22 @@ Window::Window ()
     DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VISIBLE;
     DWORD extra = WS_EX_COMPOSITED;
     
-    // TODO: resolve window position (empty => last closed, file => load from file's ADS), ensure visible on screen
+    // TODO: last position?
+
+    this->Create (this->instance, this->atom, style, extra);
+}
+
+Window::Window (HANDLE h, const FILE_ID_INFO & id)
+    : Windows::Window (this->iconsrc, MAKEINTRESOURCE (2))
+    , hFile (h)
+    , idFile (id) {
+
+    this->icons.aux.try_emplace (1);
+
+    DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VISIBLE;
+    DWORD extra = WS_EX_COMPOSITED;
+
+    // TODO: load from file's ADS, ensure visible on screen
 
     this->Create (this->instance, this->atom, style, extra /* &r */);
 }
@@ -93,12 +138,16 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
         DwmSetWindowAttribute (hWnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof backdrop);
     }
 
+    for (auto id = 0x3010; id != 0x3012; ++id) {
+        SendMessage (this->hWnd, Window::Message::UpdateSettings, 0, MAKELPARAM (id, !!IsMenuItemChecked (menu, id)));
+    }
+
     if (auto menu = GetSystemMenu (this->hWnd, FALSE)) {
         AppendMenu (menu, MF_SEPARATOR, 0, NULL);
 
         for (SHORT id = ID::FIRST_MENU_CMD; ; ++id) {
             wchar_t buffer [64];
-            if (LoadString (this->instance, id, buffer, sizeof buffer / sizeof buffer [0])) {
+            if (LoadString (cs->hInstance, id, buffer, sizeof buffer / sizeof buffer [0])) {
                 AppendMenu (menu, MF_STRING, id, buffer);
             } else
                 break;
@@ -112,7 +161,7 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
                                         | CCS_NODIVIDER | CCS_NOPARENTALIGN | CCS_NORESIZE | TBSTYLE_FLAT | TBSTYLE_TRANSPARENT,
                                         0, 0, 0, 0, hWnd, (HMENU) ID::MENUBAR, cs->hInstance, NULL)) {
 
-        SetWindowSubclass (hMenuBar, ProperBgSubclassProcedure, 0, 0); // W7 & W11+
+        SetWindowSubclass (hMenuBar, ProperBgSubclassProcedure, 0, 0);
 
         SendMessage (hMenuBar, TB_BUTTONSTRUCTSIZE, sizeof (TBBUTTON), 0);
         SendMessage (hMenuBar, TB_SETEXTENDEDSTYLE, 0, TBSTYLE_EX_MIXEDBUTTONS);
@@ -138,7 +187,7 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
     if (auto hStatusBar = CreateWindowEx (WS_EX_COMPOSITED, STATUSCLASSNAME, L"", style,
                                           0, 0, 0, 0, hWnd, (HMENU) ID::STATUSBAR, cs->hInstance, NULL)) {
 
-        SetWindowSubclass (hStatusBar, ProperBgSubclassProcedure, 0, (DWORD_PTR) this); // W7 & W11+
+        SetWindowSubclass (hStatusBar, ProperBgSubclassProcedure, 1, (DWORD_PTR) this);
 
         SendMessage (hStatusBar, SB_SIMPLE, FALSE, 0);
     }
@@ -160,8 +209,9 @@ LRESULT Window::OnFinalize () {
 
 LRESULT Window::OnActivate (WORD activated, BOOL minimized, HWND hOther) {
     if (activated) {
-        SetFocus (GetDlgItem (hWnd, (int) ID::EDITOR));
+        SetFocus (GetDlgItem (this->hWnd, (int) ID::EDITOR));
     }
+    InvalidateRect (GetDlgItem (this->hWnd, ID::STATUSBAR), NULL, TRUE);
     this->ShowMenuAccelerators (false);
     return TRUE;
 }
@@ -197,40 +247,6 @@ LRESULT Window::OnGetMinMaxInfo (MINMAXINFO * mmi) {
     return 0;
 }
 
-LRESULT Window::OnDrawItem (WPARAM id, const DRAWITEMSTRUCT * draw) {
-    switch (id) {
-        case ID::STATUSBAR:
-            // SetDCBrushColor (draw->hDC, this->global.inactive); // ???
-            // FillRect (draw->hDC, &draw->rcItem, (HBRUSH) GetStockObject (DC_BRUSH));
-
-            /*DrawCompositedTextOptions options;
-            options.font = this->fonts.text.handle;
-            options.theme = GetWindowTheme (draw->hwndItem);
-            this->GetCaptionTextColor (NULL, options.color, options.glow);
-            draw->rcItem.top += 1;
-            draw->rcItem.left += this->metrics [SM_CXPADDEDBORDER];
-            draw->rcItem.right -= this->metrics [SM_CXFIXEDFRAME];
-            if (SendMessage (draw->hwndItem, SB_GETICON, draw->itemID, 0)) {
-                draw->rcItem.left += this->metrics [SM_CXSMICON] + this->metrics [SM_CXFIXEDFRAME];
-            }
-            SetBkMode (draw->hDC, TRANSPARENT);
-            DrawCompositedText (draw->hDC, (LPWSTR) draw->itemData, DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS, draw->rcItem, &options);*/
-            return TRUE;
-
-        case ID::SEPARATOR:
-            SetDCBrushColor (draw->hDC, this->global.dark ? this->global.inactive : GetSysColor (COLOR_3DFACE));
-            FillRect (draw->hDC, &draw->rcItem, (HBRUSH) GetStockObject (DC_BRUSH));
-            return TRUE;
-        default:
-            return FALSE;
-    }
-}
-
-LRESULT Window::OnEraseBackground (HDC hDC) {
-    //SetDCBrushColor (hDC, 0);
-    return NULL; // (LRESULT) GetStockObject (DC_BRUSH);
-}
-
 SIZE GetClientSize (HWND hWnd) {
     RECT r;
     if (GetClientRect (hWnd, &r)) {
@@ -244,7 +260,7 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
 
     SIZE status = GetClientSize (hStatusBar);
 
-    static const short widths [] = { 32, 128, 128, 128 };
+    static const short widths [] = { 32, 32, 128, 128, 128 };
     static const auto  n = sizeof widths / sizeof widths [0];
 
     int scaled [n + 1] = {};
@@ -260,6 +276,14 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
 
     this->minimum.statusbar = { parent.cx - scaled [0], status.cy };
     SendMessage (hStatusBar, SB_SETPARTS, n + 1, (LPARAM) scaled);
+
+    // TODO: Line/Column, CR-LF/CR/LF, UTF-8/UTF-XX/charset, 
+
+    SendMessage (hStatusBar, SB_SETTEXT, 0 | SBT_OWNERDRAW, (LPARAM) L"First text");
+    SendMessage (hStatusBar, SB_SETTEXT, 1 | SBT_OWNERDRAW, (LPARAM) L"Second text");
+    SendMessage (hStatusBar, SB_SETTEXT, 2 | SBT_OWNERDRAW, (LPARAM) L"3rd");
+    SendMessage (hStatusBar, SB_SETTEXT, 3 | SBT_OWNERDRAW, (LPARAM) L"Fourth text");
+    SendMessage (hStatusBar, SB_SETTEXT, 5 | SBT_OWNERDRAW, (LPARAM) L"TRIMCORE");
 
     try {
         SendMessage (hStatusBar, SB_SETICON, n, (LPARAM) this->icons.aux.at (1).small);
@@ -307,8 +331,10 @@ LRESULT Window::OnPositionChange (const WINDOWPOS & position) {
 
         MARGINS margins = { 0,0,0,0 };
         if (this->global.dark) {
-            margins.cyTopHeight = yMenuBar; // ???
-            margins.cyBottomHeight = yStatusBar;
+            margins.cyTopHeight = yMenuBar;
+            if (IsWindows11OrGreater ()) {
+                margins.cyBottomHeight = yStatusBar;
+            }
         }
         DwmExtendFrameIntoClientArea (hWnd, &margins);
         InvalidateRect (hWnd, NULL, TRUE);
@@ -318,7 +344,7 @@ LRESULT Window::OnPositionChange (const WINDOWPOS & position) {
 
 void Window::ShowMenuAccelerators (BOOL show) {
     if (auto hMenuBar = GetDlgItem (this->hWnd, Window::ID::MENUBAR)) {
-        SendMessage (hMenuBar, TB_SETDRAWTEXTFLAGS, DT_HIDEPREFIX, show ? 0 : DT_HIDEPREFIX);
+        this->bMenuAccelerators = show;
         InvalidateRect (hMenuBar, NULL, TRUE);
     }
 }
@@ -376,17 +402,55 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
         case 0x1001:
             new Window;
             break;
+        case 0x1002:
+            //if (changed) ask: Save, Save As, Don't Save (forget changes), Cancel
+
+            // go with open
+        {
+            wchar_t path [MAX_NT_PATH];
+            wchar_t mask [256];
+
+            int i = 0x100;
+            int m = 0;
+            int n = 0;
+            while (m = LoadString (Windows::GetCurrentModuleHandle (), i, &mask [n], sizeof mask / sizeof mask [0] - n - 1)) {
+                n += m + 1;
+                i++;
+            }
+            mask [n] = L'\0';
+
+            path [0] = L'\0';
+
+            OPENFILENAME ofn {};
+            ofn.lStructSize = sizeof (OPENFILENAME);
+            ofn.hwndOwner = this->hWnd;
+            ofn.hInstance = Windows::GetCurrentModuleHandle ();
+            ofn.lpstrFilter = mask;
+            ofn.lpstrCustomFilter = NULL;
+            ofn.nFilterIndex = 1;
+            ofn.lpstrFile = path; // TODO: copy current path here?
+            ofn.nMaxFile = MAX_NT_PATH;
+            ofn.lpstrFileTitle = NULL;
+            ofn.lpstrInitialDir = NULL;
+            ofn.lpstrTitle = NULL;
+            ofn.Flags = OFN_FILEMUSTEXIST | OFN_EXPLORER | OFN_ENABLESIZING; // ??? OFN_ALLOWMULTISELECT 
+            ofn.lpstrDefExt = L"txt";
+
+            if (GetOpenFileName (&ofn)) {
+                
+
+            }
+        }
+            break;
 
         case 0x3010:
         case 0x3011:
             EnumWindows ([] (HWND hWnd, LPARAM lParam) {
-                if (auto atom = GetClassWord (hWnd, GCW_ATOM)) {
-                    if (atom == Window::atom) {
-                        PostMessage (hWnd, Window::Message::UpdateSettings, 0, lParam);
-                    }
+                if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
+                    PostMessage (hWnd, Window::Message::UpdateSettings, 0, lParam);
                 }
                 return TRUE;
-            }, id | (IsMenuItemChecked (menu, id) ? 0 : 0x8000'0000));
+            }, MAKELPARAM (id, !IsMenuItemChecked (menu, id)));
             break;
 
         case 0x10: case 0x11: case 0x12: case 0x13:
@@ -440,33 +504,116 @@ LRESULT Window::OnNotify (WPARAM id, NMHDR * nm) {
                     switch (nmtb->nmcd.dwDrawStage) {
                         case CDDS_PREPAINT:
                             if (this->global.dark) {
-                                if (auto hBrush = Windows::CreateSolidBrushEx (0x000000, 128)) {
+                                HBRUSH hBrush;
+                                if (this->bFullscreen) {
+                                    if (!IsWindows11OrGreater ()) {
+                                        COLORREF clr;
+                                        if (GetForegroundWindow () == this->hWnd) {
+                                            clr = RGB (GetRValue (this->global.active) / 2,
+                                                       GetGValue (this->global.active) / 2,
+                                                       GetBValue (this->global.active) / 2);
+                                        } else {
+                                            clr = this->global.inactive;
+                                        }
+                                        hBrush = Windows::CreateSolidBrushEx (clr, 255);
+                                    } else {
+                                        hBrush = Windows::CreateSolidBrushEx (this->global.inactive, 255);
+                                    }
+                                } else {
+                                    hBrush = Windows::CreateSolidBrushEx (0x000000, 128);
+                                }
+                                if (hBrush) {
                                     FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, hBrush);
                                     DeleteObject (hBrush);
                                     return CDRF_NOTIFYITEMDRAW;
                                 }
                             }
-                            SetDCBrushColor (nmtb->nmcd.hdc, this->global.background);
-                            FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, (HBRUSH) GetStockObject (DC_BRUSH));
-                            return CDRF_NOTIFYITEMDRAW;
+                            return CDRF_DODEFAULT;
 
                         case CDDS_ITEMPREPAINT:
-                            nmtb->clrText = this->global.text;
+                            const bool active = (GetActiveWindow () == this->hWnd);
 
-                            if (nmtb->nmcd.dwItemSpec == this->active_menu) {
-                                nmtb->nmcd.uItemState = CDIS_HOT | CDIS_SELECTED;
+                            if ((nmtb->nmcd.dwItemSpec == this->active_menu) || (nmtb->nmcd.uItemState & CDIS_HOT)) {
+                                
+                                COLORREF clr = 0;
+                                if (IsWindows11OrGreater ()) {
+                                    if (IsMenuItemChecked (menu, 0x3010) && active) {
+                                        clr = this->global.accent;
+                                    }
+                                } else {
+                                    clr = this->global.accent;
+                                }
+
+                                if (clr) {
+                                    if (auto hBrush = Windows::CreateSolidBrushEx (clr, 255)) {
+                                        FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, hBrush);
+                                        DeleteObject (hBrush);
+                                    }
+                                } else {
+                                    FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, (HBRUSH) GetStockObject (BLACK_BRUSH));
+                                }
                             }
-                            if (this->global.dark) {
-                                nmtb->clrHighlightHotTrack = GetSysColor (COLOR_MENUHILIGHT); // TODO: get from UXTHEME or (this->global.accent & 0x00FFFFFF)
-                                return TBCDRF_USECDCOLORS | TBCDRF_NOOFFSET | TBCDRF_HILITEHOTTRACK;
+
+                            COLORREF color;
+                            if (active || (nmtb->nmcd.uItemState & CDIS_HOT)) {
+                                color = this->global.text;
                             } else {
-                                return TBCDRF_USECDCOLORS | TBCDRF_NOOFFSET;
+                                color = GetSysColor (COLOR_GRAYTEXT);
                             }
+
+                            wchar_t text [64];
+                            auto n = GetMenuString (Window::menu, nmtb->nmcd.dwItemSpec, text, sizeof text / sizeof text [0], MF_BYPOSITION);
+                            DWORD flags = DT_CENTER | DT_VCENTER | DT_SINGLELINE;
+                            if (!this->bMenuAccelerators) {
+                                flags |= DT_HIDEPREFIX;
+                            }
+
+                            SetBkMode (nmtb->nmcd.hdc, TRANSPARENT);
+                            Windows::DrawTextComposited (nm->hwndFrom, nmtb->nmcd.hdc, text, n, flags, color, &nmtb->nmcd.rc);
+
+                            return TBCDRF_NOOFFSET | CDRF_SKIPDEFAULT;
                     }
             }
             break;
     }
     return 0;
+}
+
+LRESULT Window::OnDrawItem (WPARAM id, const DRAWITEMSTRUCT * draw) {
+    switch (id) {
+        case ID::STATUSBAR:
+        {
+            COLORREF color;
+            if (GetActiveWindow () == this->hWnd) {
+                color = this->global.text;
+            } else {
+                color = GetSysColor (COLOR_GRAYTEXT);
+            }
+
+            RECT r = draw->rcItem;
+            r.top += 1;
+            r.left += this->metrics [SM_CXPADDEDBORDER];
+            r.right -= this->metrics [SM_CXFIXEDFRAME];
+            if (SendMessage (draw->hwndItem, SB_GETICON, draw->itemID, 0)) {
+                r.left += this->metrics [SM_CXSMICON];
+            }
+            SetBkMode (draw->hDC, TRANSPARENT);
+            Windows::DrawTextComposited (draw->hwndItem, draw->hDC, (LPWSTR) draw->itemData, -1, DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS, color, &r);
+        }
+        return TRUE;
+
+        case ID::SEPARATOR:
+            SetDCBrushColor (draw->hDC, this->global.dark ? this->global.inactive : GetSysColor (COLOR_3DFACE));
+            FillRect (draw->hDC, &draw->rcItem, (HBRUSH) GetStockObject (DC_BRUSH));
+            return TRUE;
+        default:
+            return FALSE;
+    }
+}
+
+LRESULT Window::OnEraseBackground (HDC hDC) {
+    //SetDCBrushColor (hDC, 0);
+    return NULL; // (LRESULT) GetStockObject (DC_BRUSH);
 }
 
 LRESULT Window::OnUserMessage (UINT message, WPARAM, LPARAM lParam) {
@@ -480,7 +627,7 @@ LRESULT Window::OnUserMessage (UINT message, WPARAM, LPARAM lParam) {
 
         case Message::UpdateSettings:
             auto id = LOWORD (lParam);
-            bool set = lParam & 0x8000'0000;
+            bool set = HIWORD (lParam) & 1;
 
             switch (id) {
                 case 0x3010: {
@@ -493,6 +640,34 @@ LRESULT Window::OnUserMessage (UINT message, WPARAM, LPARAM lParam) {
                 } break;
             }
             CheckMenuItem (menu, id, set ? MF_CHECKED : 0);
+            break;
+    }
+    return 0;
+}
+
+LRESULT Window::OnCopyData (HWND hSender, ULONG_PTR code, const void * data, std::size_t size) {
+    std::printf ("OnCopyData from %p: %llu, size: %llu\n", hSender, code, size);
+
+    switch (code) {
+        case CopyCode::OpenFileCheck:
+            if ((size == sizeof (FILE_ID_INFO)) && (this->hFile != INVALID_HANDLE_VALUE)) {
+                
+                FILE_ID_INFO id {};
+                if (!GetFileInformationByHandleEx (this->hFile, FileIdInfo, &id, sizeof id)) {
+
+                    BY_HANDLE_FILE_INFORMATION info;
+                    if (GetFileInformationByHandle (this->hFile, &info)) {
+
+                        id.VolumeSerialNumber = info.dwVolumeSerialNumber;
+                        std::memset (id.FileId.Identifier, 0, sizeof id.FileId.Identifier);
+                        std::memcpy (&id.FileId.Identifier [0], &info.nFileIndexLow, sizeof info.nFileIndexLow);
+                        std::memcpy (&id.FileId.Identifier [4], &info.nFileIndexHigh, sizeof info.nFileIndexHigh);
+                    } else
+                        return FALSE;
+                }
+
+                return std::memcmp (data, &id, sizeof id) == 0;
+            }
             break;
     }
     return 0;

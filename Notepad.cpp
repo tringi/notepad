@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <objbase.h>
+#include <ShellAPI.h>
 #include <CommCtrl.h>
 #include <Uxtheme.h>
 #include <DwmAPI.h>
@@ -9,7 +10,9 @@
 #include <VersionHelpers.h>
 
 #include "Notepad_Window.hpp"
-#include "Windows/Windows_SetThreadName.hpp"
+#include "Windows\Windows_FileID.hpp"
+#include "Windows\Windows_GetFullPath.hpp"
+#include "Windows\Windows_SetThreadName.hpp"
 #include "Windows\Windows_AccessibilityTextScale.hpp"
 
 #include <list>
@@ -24,102 +27,169 @@ bool InitVersionInfoStrings (HINSTANCE);
 int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
     Windows::SetThreadName (L"GUI");
 
-    // trim lpCmdLine, remove quotes (if any)
-    // if not empty, get file ID 
-    //   - file may not exist, ask to create
-    //   - have file size, ask other instances if they can map it (if not, reuse this one)
-
     SetLastError (0);
-    if (InitVersionInfoStrings (hInstance)
-            && InitializeGUI (hInstance)
-            && scale.initialize ()) {
+    if (Window::InitAtom (hInstance)) {
 
-        const auto hAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (1));
-        const auto hDarkMenuAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (2));
+        // remove quotes (if any)
+        // TODO: split to multiple paths // CommandLineToArgvW
+        // TODO: resolve relative and properly prefix to support long paths
 
-        new Window;
+        /*auto argc = 0;
+        auto args = CommandLineToArgvW (lpCmdLine, &argc);
 
-        MSG message {};
-        const HANDLE handles [] = {
-            scale.GetEventHandle ()
-        };
-        constexpr DWORD nHandles = sizeof handles / sizeof handles [0];
+        std::printf ("ARGS:\n");
+        for (auto i = 0; i != argc; ++i) {
+            wchar_t full [32768];
+            Windows::GetFullPath (args [i], 32768, full, nullptr);
 
-        DWORD mwmoFlags = 0x04FFu;
-        if (IsWindows8OrGreater ()) {
-            mwmoFlags |= QS_TOUCH | QS_POINTER;
+            std::wprintf (L"%s\n", full);
+        }
+        std::printf ("\n");// */
+
+        if (lpCmdLine [0] == L'"') {
+            lpCmdLine++;
+            if (auto * end = std::wcschr (lpCmdLine, L'"')) {
+                *end = L'\0';
+            }
+        }
+        if (lpCmdLine [0]) {
+            // TODO: support passing file id like: <volume:id-bytes>
+
+            Windows::FileID id (lpCmdLine); // TODO: merge with 'Window'
+            if (id.valid ()) {
+
+                if (EnumWindows ([] (HWND hWnd, LPARAM pFileId) {
+                                    if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
+                                        COPYDATASTRUCT data = {
+                                            Window::CopyCode::OpenFileCheck,
+                                            sizeof (FILE_ID_INFO),
+                                            (void *) pFileId
+                                        };
+                                        if (SendMessage (hWnd, WM_COPYDATA, NULL, (LPARAM) &data)) {
+                                            SetForegroundWindow (hWnd);
+                                            return FALSE;
+                                        }
+                                    }
+                                    return TRUE;
+                                 }, (LPARAM) &id.info) == FALSE) {
+
+                    // other window has the file open and was activated, we're done here
+                    return ERROR_SUCCESS;
+                }
+
+
+                std::printf ("FILE ID:");
+                for (auto i = 0u; i != 16u; ++i) {
+                    std::printf (" %02x", id.info.FileId.Identifier [i]);
+                }
+                std::printf ("\n");
+
+                // ask other instances if they have it open
+                //  - yes: activate them and end
+                //  - no: OpenFileById (...) // share only for read
+                //     - on share failure
+                //        - ask if really edit (a copy (disable 'Save')) or read-only
+                //     - check if there's unsaved buffer and the file hasn't changed since
+            } else {
+                // ask if to create new file?
+            }
         }
 
-        do
-        switch (MsgWaitForMultipleObjectsEx (nHandles, handles, INFINITE, mwmoFlags, 0)) {
-            case WAIT_OBJECT_0 + 0:
-                if (scale.OnEvent ()) {
-                    EnumThreadWindows (GetCurrentThreadId (),
-                                       [] (HWND hWnd, LPARAM lParam) {
-                                           PostMessage (hWnd, Window::Message::UpdateFontSize, 0, 0);
-                                           return TRUE;
-                                       }, NULL);
-                }
-                break;
+        // if not empty, get file ID 
+        //   - file may not exist, ask to create
+        //   - have file size, ask other instances if they can map it (if not, reuse this one)
 
-            case WAIT_OBJECT_0 + nHandles:
-                while (PeekMessage (&message, NULL, 0u, 0u, PM_REMOVE)) {
-                    if (message.message == WM_QUIT) {
-                        break;
+        if (InitVersionInfoStrings (hInstance)
+                && InitializeGUI (hInstance)
+                && scale.initialize ()) {
+
+            const auto hAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (1));
+            const auto hDarkMenuAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (2));
+
+            new Window;
+
+            MSG message {};
+            const HANDLE handles [] = {
+                scale.GetEventHandle ()
+            };
+            constexpr DWORD nHandles = sizeof handles / sizeof handles [0];
+
+            DWORD mwmoFlags = 0x04FFu;
+            if (IsWindows8OrGreater ()) {
+                mwmoFlags |= QS_TOUCH | QS_POINTER;
+            }
+
+            do
+            switch (MsgWaitForMultipleObjectsEx (nHandles, handles, INFINITE, mwmoFlags, 0)) {
+                case WAIT_OBJECT_0 + 0:
+                    if (scale.OnEvent ()) {
+                        EnumThreadWindows (GetCurrentThreadId (),
+                                           [] (HWND hWnd, LPARAM lParam) {
+                                               PostMessage (hWnd, Window::Message::UpdateFontSize, 0, 0);
+                                               return TRUE;
+                                           }, NULL);
                     }
-                    switch (message.message) {
-                        case WM_SYSKEYDOWN:
-                            switch (message.wParam) {
-                                case VK_MENU:
-                                    if (auto root = GetAncestor (message.hwnd, GA_ROOT)) {
-                                        PostMessage (root, Window::Message::ShowAccelerators, 0, 0);
+                    break;
+
+                case WAIT_OBJECT_0 + nHandles:
+                    while (PeekMessage (&message, NULL, 0u, 0u, PM_REMOVE)) {
+                        if (message.message == WM_QUIT) {
+                            break;
+                        }
+                        switch (message.message) {
+                            case WM_SYSKEYDOWN:
+                                switch (message.wParam) {
+                                    case VK_MENU:
+                                        if (auto root = GetAncestor (message.hwnd, GA_ROOT)) {
+                                            PostMessage (root, Window::Message::ShowAccelerators, 0, 0);
+                                        }
+                                        break;
+                                }
+                        }
+
+                        if (message.hwnd) {
+                            auto root = GetAncestor (message.hwnd, GA_ROOT);
+
+                            if (Window::GetPresentation ().dark) {
+                                if (TranslateAccelerator (root, hDarkMenuAccelerators, &message))
+                                    continue;
+                            }
+                            if (TranslateAccelerator (root, hAccelerators, &message))
+                                continue;
+
+                        } else {
+                            switch (message.message) {
+                                case WM_COMMAND:
+                                    switch (message.wParam) {
+                                        case 0xCF:
+                                            EnumThreadWindows (GetCurrentThreadId (),
+                                                               [] (HWND hWnd, LPARAM lParam) {
+                                                                   PostMessage (hWnd, WM_CLOSE, 0, 0);
+                                                                   return TRUE;
+                                                               }, NULL);
+                                            break;
                                     }
                                     break;
                             }
-                    }
-
-                    if (message.hwnd) {
-                        auto root = GetAncestor (message.hwnd, GA_ROOT);
-
-                        if (Window::IsDark ()) {
-                            if (TranslateAccelerator (root, hDarkMenuAccelerators, &message))
-                                continue;
                         }
-                        if (TranslateAccelerator (root, hAccelerators, &message))
-                            continue;
-
-                    } else {
-                        switch (message.message) {
-                            case WM_COMMAND:
-                                switch (message.wParam) {
-                                    case 0xCF:
-                                        EnumThreadWindows (GetCurrentThreadId (),
-                                                           [] (HWND hWnd, LPARAM lParam) {
-                                                               PostMessage (hWnd, WM_CLOSE, 0, 0);
-                                                               return TRUE;
-                                                           }, NULL);
-                                        break;
-                                }
-                                break;
-                        }
+                        TranslateMessage (&message);
+                        DispatchMessage (&message);
                     }
-                    TranslateMessage (&message);
-                    DispatchMessage (&message);
-                }
-                break;
+                    break;
 
-            default:
-            case WAIT_FAILED:
-                return (int) GetLastError ();
+                default:
+                case WAIT_FAILED:
+                    return (int) GetLastError ();
 
-        } while (message.message != WM_QUIT);
+            } while (message.message != WM_QUIT);
 
-        scale.terminate ();
+            scale.terminate ();
 
-        CoUninitialize ();
-        return (int) message.wParam;
-    } else
-        return (int) GetLastError ();
+            CoUninitialize ();
+            return (int) message.wParam;
+        }
+    }
+    return (int) GetLastError ();
 }
 
 bool InitVersionInfoStrings (HINSTANCE hInstance) {
@@ -179,13 +249,13 @@ ATOM InitializeGUI (HINSTANCE hInstance) {
     if (!InitCommonControlsEx (&classes))
         return false;
 
-    switch (CoInitializeEx (NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)) {
+    switch (CoInitializeEx (NULL, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE)) {
         case S_OK:
         case S_FALSE: // already initialized
             break;
         default:
             return false;
-    }
+    }//*/
 
     Windows::WindowPresentation::Initialize ();
     return Window::Initialize (hInstance);

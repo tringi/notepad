@@ -34,6 +34,17 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
     0xA0 "Always on &top"
 }
 
+STRINGTABLE
+LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
+{
+    0x100 "Text Documents (*.txt)"
+    0x101 "*.txt"
+    0x102 "All Files (*.*)"
+    0x103 "*.*"
+}
+
+// TODO: the IDs are unnecessary wide, reduce to 0x20...0x7F
+
 1 MENU
 LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
 {
@@ -43,6 +54,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
         MENUITEM "&Open…\tCtrl+O",  0x1002
         MENUITEM "&Save\tCtrl+S",   0x1003
         MENUITEM "Save &As…",       0x1004
+        MENUITEM "&Close",          0x1005
         MENUITEM SEPARATOR
         MENUITEM "Page Set&up…",    0x1008
         MENUITEM "&Print…\tCtrl+P", 0x1009
@@ -94,12 +106,17 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
     }
     POPUP "&View"
     {
+        POPUP "&Zoom" {
+            MENUITEM "Zoom &In\tCtrl+Plus", 0x4010
+            MENUITEM "Zoom &Out\tCtrl+Minus", 0x4011
+            MENUITEM "&Restore Default\tCtrl+0", 0x4012
+        }
         MENUITEM "&Status Bar",     0x4001
         MENUITEM "&Line Numbers",   0x4002
     }
     POPUP "&Help"
     {
-        MENUITEM "", 0x5001
+        MENUITEM "github.com/tringi/notepad", 0x5001
         MENUITEM "Check for updates", 0x5002
         MENUITEM SEPARATOR
         MENUITEM "&About…", 0x5009

@@ -6,7 +6,9 @@
 class Window
     : public Windows::Window {
 
+public:
     inline static ATOM atom = NULL;
+private:
     inline static HMENU menu = NULL;
     inline static HMODULE iconsrc = NULL;
     inline static HINSTANCE instance = NULL;
@@ -18,7 +20,12 @@ class Window
     std::uint8_t active_menu = ~0;
 
     bool bFullscreen = false;
+    bool bMenuAccelerators = false;
     RECT rBeforeFullscreen {};
+
+    HANDLE       hFile = INVALID_HANDLE_VALUE;
+    FILE_ID_INFO idFile {};
+    // wchar_t * filename = nullptr;
 
 public:
     struct ID {
@@ -39,11 +46,18 @@ public:
             UpdateSettings = WM_USER + 3,
         };
     };
+    struct CopyCode {
+        enum : ULONG_PTR {
+            OpenFileCheck = 1,
+        };
+    };
 
+    static ATOM InitAtom (HINSTANCE hInstance);
     static ATOM Initialize (HINSTANCE hInstance);
 
 public:
     Window ();
+    Window (HANDLE, const FILE_ID_INFO &);
 
 private:
     virtual LRESULT OnCreate (const CREATESTRUCT *) override;
@@ -62,6 +76,7 @@ private:
     virtual LRESULT OnMenuNext (WPARAM vk, MDINEXTMENU * next) override;
     virtual LRESULT OnVisualEnvironmentChange () override;
     virtual LRESULT OnUserMessage (UINT, WPARAM, LPARAM) override;
+    virtual LRESULT OnCopyData (HWND, ULONG_PTR, const void *, std::size_t) override;
 
     void TrackMenu (UINT index);
     void ShowMenuAccelerators (BOOL show);
@@ -69,7 +84,7 @@ private:
     LONG UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE size);
 
 public:
-    static bool IsDark () { return global.dark; }
+    static const auto & GetPresentation () { return global; }
 
 private:
     Window (const Window &) = delete;
