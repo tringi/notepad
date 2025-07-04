@@ -12,7 +12,7 @@ extern Windows::TextScale scale;
 static constexpr auto MAX_NT_PATH = 32768u;
 
 namespace {
-    HMODULE LoadIconModule () {
+    HMODULE LoadResourcesModule () {
         wchar_t path [MAX_PATH + 12];
         auto length = GetSystemDirectory (path, MAX_PATH);
         std::wcscpy (&path [length], L"\\NOTEPAD.EXE");
@@ -54,7 +54,7 @@ namespace {
                                     hBrush = Windows::CreateSolidBrushEx (self->GetPresentation ().inactive, 255);
                                 }
                                 break;
-                            case 0:
+                            case 0: // W7/W11 fully transparent background to expose transparent/mica backdrop
                                 BOOL enabled;
                                 if (SUCCEEDED (DwmIsCompositionEnabled (&enabled)) && enabled) {
                                     hBrush = (HBRUSH) GetStockObject (BLACK_BRUSH);
@@ -77,6 +77,28 @@ namespace {
         return DefSubclassProc (hWnd, message, wParam, lParam);
     }
 
+    LRESULT CALLBACK StatusBarTooltipSubclassProcedure (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
+                                                        UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+        switch (message) {
+            case WM_NOTIFY:
+                auto nm = reinterpret_cast <NMHDR *> (lParam);
+                if (nm->code == TTN_GETDISPINFO) {
+
+                    auto nmTT = reinterpret_cast <TOOLTIPTEXT *> (lParam);
+                    switch (wParam) {
+                        case 1: nmTT->lpszText = (LPWSTR) L"Current line and column"; return 0;
+                        //case 2: nmTT->lpszText = (LPWSTR) L"Current column"; return 0;
+                        case 3: nmTT->lpszText = (LPWSTR) L"Disk: 160 kB, Memory: 500 kB, 10 kB of unsaved edits, 200 kB in undo steps"; return 0;
+                        case 4: nmTT->lpszText = (LPWSTR) L"Ctrl+Wheel"; return 0;
+                        case 5: nmTT->lpszText = (LPWSTR) L"Windows mode, click to change"; return 0;
+                        case 6: nmTT->lpszText = (LPWSTR) L"Click to change"; return 0;
+                    }
+                    return 0;
+                }
+        }
+        return DefSubclassProc (hWnd, message, wParam, lParam);
+    }
+
     ATOM atomCOMBOBOX = 0;
 }
 
@@ -88,8 +110,9 @@ ATOM Window::InitAtom (HINSTANCE hInstance) {
 ATOM Window::Initialize (HINSTANCE hInstance) {
     instance = hInstance;
     
-    Window::iconsrc = LoadIconModule ();
+    Window::rsrc = LoadResourcesModule ();
     Window::menu = LoadMenu (hInstance, MAKEINTRESOURCE (1));
+    Window::wndmenu = LoadMenu (hInstance, MAKEINTRESOURCE (2));
 
     if (!IsWindows11OrGreater ()) {
         EnableMenuItem (menu, 0x3010, MF_BYCOMMAND | MF_GRAYED);
@@ -103,7 +126,7 @@ ATOM Window::Initialize (HINSTANCE hInstance) {
 }
 
 Window::Window ()
-    : Windows::Window (this->iconsrc, MAKEINTRESOURCE (2)) {
+    : Windows::Window (this->rsrc, MAKEINTRESOURCE (2)) {
 
     this->icons.aux.try_emplace (1);
 
@@ -113,21 +136,6 @@ Window::Window ()
     // TODO: last position?
 
     this->Create (this->instance, this->atom, style, extra);
-}
-
-Window::Window (HANDLE h, const FILE_ID_INFO & id)
-    : Windows::Window (this->iconsrc, MAKEINTRESOURCE (2))
-    , hFile (h)
-    , idFile (id) {
-
-    this->icons.aux.try_emplace (1);
-
-    DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VISIBLE;
-    DWORD extra = WS_EX_COMPOSITED;
-
-    // TODO: load from file's ADS, ensure visible on screen
-
-    this->Create (this->instance, this->atom, style, extra /* &r */);
 }
 
 LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
@@ -143,15 +151,19 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
     }
 
     if (auto menu = GetSystemMenu (this->hWnd, FALSE)) {
-        AppendMenu (menu, MF_SEPARATOR, 0, NULL);
+        wchar_t buffer [64];
 
-        for (SHORT id = ID::FIRST_MENU_CMD; ; ++id) {
-            wchar_t buffer [64];
-            if (LoadString (cs->hInstance, id, buffer, sizeof buffer / sizeof buffer [0])) {
-                AppendMenu (menu, MF_STRING, id, buffer);
-            } else
-                break;
-        }
+        MENUITEMINFO item;
+        item.cbSize = sizeof item;
+        item.fMask = MIIM_ID | MIIM_STATE | MIIM_FTYPE | MIIM_STRING;
+        item.dwTypeData = buffer;
+
+        UINT i = 0;
+        do {
+            item.cch = sizeof buffer / sizeof buffer [0];
+        } while (GetMenuItemInfo (Window::wndmenu, i++, TRUE, &item)
+                && InsertMenuItem (menu, 127, TRUE, &item));
+
         if (cs->dwExStyle & WS_EX_TOPMOST) {
             CheckMenuItem (menu, ID::MENU_CMD_TOPMOST, MF_CHECKED);
         }
@@ -188,6 +200,7 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
                                           0, 0, 0, 0, hWnd, (HMENU) ID::STATUSBAR, cs->hInstance, NULL)) {
 
         SetWindowSubclass (hStatusBar, ProperBgSubclassProcedure, 1, (DWORD_PTR) this);
+        SetWindowSubclass (hStatusBar, StatusBarTooltipSubclassProcedure, 0, (DWORD_PTR) this);
 
         SendMessage (hStatusBar, SB_SIMPLE, FALSE, 0);
     }
@@ -260,7 +273,7 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
 
     SIZE status = GetClientSize (hStatusBar);
 
-    static const short widths [] = { 32, 32, 128, 128, 128 };
+    static const short widths [] = { 64, 64, 52, 44, 44, 96, 128 };
     static const auto  n = sizeof widths / sizeof widths [0];
 
     int scaled [n + 1] = {};
@@ -277,17 +290,14 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
     this->minimum.statusbar = { parent.cx - scaled [0], status.cy };
     SendMessage (hStatusBar, SB_SETPARTS, n + 1, (LPARAM) scaled);
 
-    // TODO: Line/Column, CR-LF/CR/LF, UTF-8/UTF-XX/charset, 
+    SendMessage (hStatusBar, SB_SETTEXT, 0 | SBT_OWNERDRAW, (LPARAM) L"C:\\Full\\File\\Path\\here.txt");
 
-    SendMessage (hStatusBar, SB_SETTEXT, 0 | SBT_OWNERDRAW, (LPARAM) L"First text");
-    SendMessage (hStatusBar, SB_SETTEXT, 1 | SBT_OWNERDRAW, (LPARAM) L"Second text");
-    SendMessage (hStatusBar, SB_SETTEXT, 2 | SBT_OWNERDRAW, (LPARAM) L"3rd");
-    SendMessage (hStatusBar, SB_SETTEXT, 3 | SBT_OWNERDRAW, (LPARAM) L"Fourth text");
-    SendMessage (hStatusBar, SB_SETTEXT, 5 | SBT_OWNERDRAW, (LPARAM) L"TRIMCORE");
+    SendMessage (hStatusBar, SB_SETTEXT, 1 | SBT_OWNERDRAW, (LPARAM) L"5\x2236""16"); // TODO: click to Go To
+    SendMessage (hStatusBar, SB_SETTEXT, 3 | SBT_OWNERDRAW, (LPARAM) L"240\x200AkB");
+    SendMessage (hStatusBar, SB_SETTEXT, 4 | SBT_OWNERDRAW, (LPARAM) L"100\x200A%"); // TODO: click to Zoom
+    SendMessage (hStatusBar, SB_SETTEXT, 5 | SBT_OWNERDRAW, (LPARAM) L"CR LF"); // TODO: click to change
+    SendMessage (hStatusBar, SB_SETTEXT, 6 | SBT_OWNERDRAW, (LPARAM) L"Windows 1250"); // UTF-16 LE, click to change
 
-    try {
-        SendMessage (hStatusBar, SB_SETICON, n, (LPARAM) this->icons.aux.at (1).small);
-    } catch (...) {}
     return status.cy;
 }
 
@@ -399,11 +409,17 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
             }
             break;
 
-        case 0x1001:
+        case 0x20:
+            // New file
+            // TODO: if unsaved changes, ask to save or not
+            break;
+
+        case 0x21:
             new Window;
             break;
-        case 0x1002:
-            //if (changed) ask: Save, Save As, Don't Save (forget changes), Cancel
+
+        case 0x22:
+            //if unsaved changes ask: Save, Save As, Don't Save (forget changes), Cancel
 
             // go with open
         {
@@ -453,11 +469,8 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
             }, MAKELPARAM (id, !IsMenuItemChecked (menu, id)));
             break;
 
-        case 0x10: case 0x11: case 0x12: case 0x13:
-        case 0x14: case 0x15: case 0x16: case 0x17:
-        case 0x18: case 0x19: case 0x1A: case 0x1B:
-        case 0x1C: case 0x1D: case 0x1E: case 0x1F:
-            this->TrackMenu (id - 0x10);
+        case 0x12: case 0x13: case 0x14: case 0x15: case 0x16:
+            this->TrackMenu (id - 0x12);
             break;
 
         case 0xCF: // Ctrl+Alt+F4
@@ -562,7 +575,7 @@ LRESULT Window::OnNotify (WPARAM id, NMHDR * nm) {
                             }
 
                             wchar_t text [64];
-                            auto n = GetMenuString (Window::menu, nmtb->nmcd.dwItemSpec, text, sizeof text / sizeof text [0], MF_BYPOSITION);
+                            auto n = GetMenuString (Window::menu, (UINT) nmtb->nmcd.dwItemSpec, text, sizeof text / sizeof text [0], MF_BYPOSITION);
                             DWORD flags = DT_CENTER | DT_VCENTER | DT_SINGLELINE;
                             if (!this->bMenuAccelerators) {
                                 flags |= DT_HIDEPREFIX;
@@ -575,14 +588,24 @@ LRESULT Window::OnNotify (WPARAM id, NMHDR * nm) {
                     }
             }
             break;
+
+        case ID::STATUSBAR:
+            std::printf ("WM_NOTIFY ID::STATUSBAR %llu\n", id);
+            break;
     }
     return 0;
 }
 
 LRESULT Window::OnDrawItem (WPARAM id, const DRAWITEMSTRUCT * draw) {
     switch (id) {
+        case ID::SEPARATOR:
+            if (auto hBrush = Windows::CreateSolidBrushEx (this->global.inactive, 255)) {
+                FillRect (draw->hDC, &draw->rcItem, hBrush);
+                DeleteObject (hBrush);
+            }
+            return TRUE;
+
         case ID::STATUSBAR:
-        {
             COLORREF color;
             if (GetActiveWindow () == this->hWnd) {
                 color = this->global.text;
@@ -598,17 +621,10 @@ LRESULT Window::OnDrawItem (WPARAM id, const DRAWITEMSTRUCT * draw) {
                 r.left += this->metrics [SM_CXSMICON];
             }
             SetBkMode (draw->hDC, TRANSPARENT);
-            Windows::DrawTextComposited (draw->hwndItem, draw->hDC, (LPWSTR) draw->itemData, -1, DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS, color, &r);
-        }
-        return TRUE;
-
-        case ID::SEPARATOR:
-            SetDCBrushColor (draw->hDC, this->global.dark ? this->global.inactive : GetSysColor (COLOR_3DFACE));
-            FillRect (draw->hDC, &draw->rcItem, (HBRUSH) GetStockObject (DC_BRUSH));
+            Windows::DrawTextComposited (draw->hwndItem, draw->hDC, (LPWSTR) draw->itemData, -1, DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX, color, &r);
             return TRUE;
-        default:
-            return FALSE;
     }
+    return FALSE;
 }
 
 LRESULT Window::OnEraseBackground (HDC hDC) {
@@ -650,25 +666,8 @@ LRESULT Window::OnCopyData (HWND hSender, ULONG_PTR code, const void * data, std
 
     switch (code) {
         case CopyCode::OpenFileCheck:
-            if ((size == sizeof (FILE_ID_INFO)) && (this->hFile != INVALID_HANDLE_VALUE)) {
-                
-                FILE_ID_INFO id {};
-                if (!GetFileInformationByHandleEx (this->hFile, FileIdInfo, &id, sizeof id)) {
-
-                    BY_HANDLE_FILE_INFORMATION info;
-                    if (GetFileInformationByHandle (this->hFile, &info)) {
-
-                        id.VolumeSerialNumber = info.dwVolumeSerialNumber;
-                        std::memset (id.FileId.Identifier, 0, sizeof id.FileId.Identifier);
-                        std::memcpy (&id.FileId.Identifier [0], &info.nFileIndexLow, sizeof info.nFileIndexLow);
-                        std::memcpy (&id.FileId.Identifier [4], &info.nFileIndexHigh, sizeof info.nFileIndexHigh);
-                    } else
-                        return FALSE;
-                }
-
-                return std::memcmp (data, &id, sizeof id) == 0;
-            }
-            break;
+            return (size == sizeof (FILE_ID_INFO))
+                && this->IsFileOpen ((const FILE_ID_INFO *) data);
     }
     return 0;
 }

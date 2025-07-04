@@ -4,7 +4,12 @@
 
 1 ACCELERATORS
 {
-    "^N", 0x1001 // Ctrl+N
+    "N", 0x20, CONTROL, VIRTKEY // Ctrl+N, New
+    "N", 0x21, CONTROL, SHIFT, VIRTKEY // Ctrl+Shift+N, New Window
+    "O", 0x22, CONTROL, VIRTKEY // Ctrl+O, Open
+    "S", 0x24, CONTROL, VIRTKEY // Ctrl+S, Save
+    "S", 0x25, CONTROL, SHIFT, VIRTKEY // Ctrl+Shift+S, Save As
+
     // "^C", 0xCC // Ctrl+C
     VK_F4, 0xCF, VIRTKEY, ALT, CONTROL // Ctrl+Alt+F4 - quit whole process
 
@@ -21,17 +26,19 @@
 //  - used only in dark mode
 
 2 ACCELERATORS {
-    "F", 0x10, VIRTKEY, ALT
-    "E", 0x11, VIRTKEY, ALT
-    "O", 0x12, VIRTKEY, ALT
-    "V", 0x13, VIRTKEY, ALT
-    "H", 0x14, VIRTKEY, ALT
+    "F", 0x12, VIRTKEY, ALT
+    "E", 0x13, VIRTKEY, ALT
+    "O", 0x14, VIRTKEY, ALT
+    "V", 0x15, VIRTKEY, ALT
+    "H", 0x16, VIRTKEY, ALT
 }
 
-STRINGTABLE
+2 MENU
 LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
 {
-    0xA0 "Always on &top"
+    MENUITEM SEPARATOR
+    MENUITEM "Always on &top", 0xA0
+    MENUITEM "&Full Screen\tF11", 0xFB
 }
 
 STRINGTABLE
@@ -50,11 +57,11 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
 {
     POPUP "&File"
     {
-        MENUITEM "&New\tCtrl+N",    0x1001
-        MENUITEM "&Open…\tCtrl+O",  0x1002
-        MENUITEM "&Save\tCtrl+S",   0x1003
-        MENUITEM "Save &As…",       0x1004
-        MENUITEM "&Close",          0x1005
+        MENUITEM "&New\tCtrl+N",    0x20
+        MENUITEM "New &Window\tCtrl+Shift+N", 0x21
+        MENUITEM "&Open…\tCtrl+O",  0x22
+        MENUITEM "&Save\tCtrl+S",   0x24
+        MENUITEM "Save &As…",       0x25
         MENUITEM SEPARATOR
         MENUITEM "Page Set&up…",    0x1008
         MENUITEM "&Print…\tCtrl+P", 0x1009
@@ -106,11 +113,15 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
     }
     POPUP "&View"
     {
-        POPUP "&Zoom" {
+        /*POPUP "&Zoom" {
             MENUITEM "Zoom &In\tCtrl+Plus", 0x4010
             MENUITEM "Zoom &Out\tCtrl+Minus", 0x4011
             MENUITEM "&Restore Default\tCtrl+0", 0x4012
-        }
+        }*/
+        MENUITEM "Zoom &In\tCtrl+Plus", 0x4010
+        MENUITEM "Zoom &Out\tCtrl+Minus", 0x4011
+        MENUITEM "&Restore Default\tCtrl+0", 0x4012
+        MENUITEM SEPARATOR
         MENUITEM "&Status Bar",     0x4001
         MENUITEM "&Line Numbers",   0x4002
     }

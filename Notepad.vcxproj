@@ -347,6 +347,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Notepad.cpp" />
+    <ClCompile Include="Notepad_File.cpp" />
     <ClCompile Include="Notepad_Settings.cpp" />
     <ClCompile Include="Notepad_Window.cpp" />
     <ClCompile Include="Windows\Windows_AccessibilityTextScale.cpp" />
@@ -366,6 +367,7 @@
     <ResourceCompile Include="Notepad.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Notepad_File.hpp" />
     <ClInclude Include="Notepad_Settings.hpp" />
     <ClInclude Include="Notepad_Window.hpp" />
     <ClInclude Include="Windows\Windows_AccessibilityTextScale.hpp" />

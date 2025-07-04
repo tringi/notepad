@@ -37,6 +37,7 @@
     <ClCompile Include="Windows\Windows_DrawTextComposited.cpp">
       <Filter>Windows</Filter>
     </ClCompile>
+    <ClCompile Include="Notepad_File.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Notepad.rc" />
@@ -89,6 +90,7 @@
     <ClInclude Include="Windows\Windows_DrawTextComposited.hpp">
       <Filter>Windows</Filter>
     </ClInclude>
+    <ClInclude Include="Notepad_File.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Windows\Windows_Symbol.tcc">

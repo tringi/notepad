@@ -2,15 +2,18 @@
 #define NOTEPAD_WINDOW_HPP
 
 #include "Windows/Windows_Window.hpp"
+#include "Notepad_File.hpp"
 
 class Window
-    : public Windows::Window {
+    : private Windows::Window
+    , private File {
 
 public:
     inline static ATOM atom = NULL;
 private:
     inline static HMENU menu = NULL;
-    inline static HMODULE iconsrc = NULL;
+    inline static HMENU wndmenu = NULL;
+    inline static HMODULE rsrc = NULL;
     inline static HINSTANCE instance = NULL;
 
     struct {
@@ -22,10 +25,6 @@ private:
     bool bFullscreen = false;
     bool bMenuAccelerators = false;
     RECT rBeforeFullscreen {};
-
-    HANDLE       hFile = INVALID_HANDLE_VALUE;
-    FILE_ID_INFO idFile {};
-    // wchar_t * filename = nullptr;
 
 public:
     struct ID {
@@ -57,7 +56,6 @@ public:
 
 public:
     Window ();
-    Window (HANDLE, const FILE_ID_INFO &);
 
 private:
     virtual LRESULT OnCreate (const CREATESTRUCT *) override;
@@ -90,6 +88,5 @@ private:
     Window (const Window &) = delete;
     Window & operator = (const Window &) = delete;
 };
-
 
 #endif
