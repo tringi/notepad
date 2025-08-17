@@ -34,7 +34,8 @@ public:
 
             EDITOR = 0xB0,
             MENUBAR = 0xB1,
-            SEPARATOR = 0xB2,
+            MENUNOTE = 0xFB,
+            SEPARATOR = 0xBE,
             STATUSBAR = 0xBF,
         };
     };
@@ -80,6 +81,7 @@ private:
     void ShowMenuAccelerators (BOOL show);
     void RecreateMenuButtons (HWND hMenuBar);
     LONG UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE size);
+    HBRUSH CreateDarkMenuBarBrush ();
 
 public:
     static const auto & GetPresentation () { return global; }

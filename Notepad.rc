@@ -63,73 +63,73 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
         MENUITEM "&Save\tCtrl+S",   0x24
         MENUITEM "Save &As…",       0x25
         MENUITEM SEPARATOR
-        MENUITEM "Page Set&up…",    0x1008
-        MENUITEM "&Print…\tCtrl+P", 0x1009
+        MENUITEM "Page Set&up…",    0x28
+        MENUITEM "&Print…\tCtrl+P", 0x29
         MENUITEM SEPARATOR
         MENUITEM "E&xit\tAlt+F4",   IDCLOSE
     }
     POPUP "&Edit"
     {
-        MENUITEM "&Undo\tCtrl+Z", 0x2001
+        MENUITEM "&Undo\tCtrl+Z", 0x30
         POPUP "Edit &History" {
-            MENUITEM "...", 0x2100
+            MENUITEM "...", 0x3000
         }
         MENUITEM SEPARATOR
-        MENUITEM "Cu&t\tCtrl+X",    0x2002
-        MENUITEM "&Copy\tCtrl+C",   0x2003
-        MENUITEM "&Paste\tCtrl+V",  0x2004
-        MENUITEM "De&lete\tDel",    0x2005
+        MENUITEM "Cu&t\tCtrl+X",    0x32
+        MENUITEM "&Copy\tCtrl+C",   0x33
+        MENUITEM "&Paste\tCtrl+V",  0x34
+        MENUITEM "De&lete\tDel",    0x35
         MENUITEM SEPARATOR
-        MENUITEM "Select &All\tCtrl+A", 0x2006
+        MENUITEM "Select &All\tCtrl+A", 0x37
         MENUITEM SEPARATOR
-        MENUITEM "&Find…\tCtrl+F",  0x2010
-        MENUITEM "Find &Next\tF3",  0x2011
-        MENUITEM "&Replace…\tCtrl+H", 0x2012
-        MENUITEM "&Go To…\tCtrl+G", 0x201F
+        MENUITEM "&Find…\tCtrl+F",  0x3A
+        MENUITEM "Find &Next\tF3",  0x3B
+        MENUITEM "&Replace…\tCtrl+H", 0x3C
+        MENUITEM "&Go To…\tCtrl+G", 0x3D
         MENUITEM SEPARATOR
-        MENUITEM "Insert &Date/Time\tF5", 0x2020
-        MENUITEM "Insert ...", 0x2021
+        MENUITEM "Insert &Date/Time\tF5", 0x40
+        MENUITEM "Insert ...", 0x41
     }
     POPUP "F&ormat"
     {
-        MENUITEM "&Word wrap",  0x300F
-        MENUITEM "&Font…",      0x3000
-        MENUITEM "&Background…", 0x3001
+        MENUITEM "&Word wrap",  0x50
+        MENUITEM "&Font…",      0x51
+        MENUITEM "&Background…", 0x52
         MENUITEM SEPARATOR
         POPUP "File &Properties" {
-            MENUITEM "&Font…",      0x3030
-            MENUITEM "&Background…", 0x3031
-            MENUITEM "Border &Color…", 0x3032
+            MENUITEM "&Font…",      0x55
+            MENUITEM "&Background…", 0x56
+            MENUITEM "Border &Color…", 0x57
             MENUITEM SEPARATOR
-            MENUITEM "&Erase", 0x303F
+            MENUITEM "&Erase", 0x59
         }
         POPUP "&Window" {
-            MENUITEM "Classic Caption", 0x3010
-            MENUITEM "Square Corners", 0x3011
+            MENUITEM "Classic Caption", 0x5A
+            MENUITEM "Square Corners", 0x5B
         }
         POPUP "&Application" {
-            MENUITEM "Separate processes", 0x3020
+            MENUITEM "Separate processes", 0x5F
         }
     }
     POPUP "&View"
     {
         /*POPUP "&Zoom" {
-            MENUITEM "Zoom &In\tCtrl+Plus", 0x4010
-            MENUITEM "Zoom &Out\tCtrl+Minus", 0x4011
-            MENUITEM "&Restore Default\tCtrl+0", 0x4012
+            MENUITEM "Zoom &In\tCtrl+Plus", 0x60
+            MENUITEM "Zoom &Out\tCtrl+Minus", 0x61
+            MENUITEM "&Restore Default\tCtrl+0", 0x62
         }*/
-        MENUITEM "Zoom &In\tCtrl+Plus", 0x4010
-        MENUITEM "Zoom &Out\tCtrl+Minus", 0x4011
-        MENUITEM "&Restore Default\tCtrl+0", 0x4012
+        MENUITEM "Zoom &In\tCtrl+Plus", 0x60
+        MENUITEM "Zoom &Out\tCtrl+Minus", 0x61
+        MENUITEM "&Restore Default\tCtrl+0", 0x62
         MENUITEM SEPARATOR
-        MENUITEM "&Status Bar",     0x4001
-        MENUITEM "&Line Numbers",   0x4002
+        MENUITEM "&Line Numbers",   0x6E
+        MENUITEM "&Status Bar",     0x6F
     }
     POPUP "&Help"
     {
-        MENUITEM "github.com/tringi/notepad", 0x5001
-        MENUITEM "Check for updates", 0x5002
+        MENUITEM "github.com/tringi/notepad", 0x70
+        MENUITEM "Check for updates", 0x7E
         MENUITEM SEPARATOR
-        MENUITEM "&About…", 0x5009
+        MENUITEM "&About…", 0x7F
     }
 }
