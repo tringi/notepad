@@ -77,15 +77,34 @@ namespace {
         return DefSubclassProc (hWnd, message, wParam, lParam);
     }
 
+    LRESULT CALLBACK TooltipThemeSubclassProcedure (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
+                                                    UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+        switch (message) {
+            case WM_NOTIFY:
+                auto nm = reinterpret_cast <NMHDR *> (lParam);
+                if (nm->code == TTN_SHOW) {
+
+                    auto marker = L"TRIMCORE.ThemeSet";
+                    auto theme_dark = (std::intptr_t) reinterpret_cast <Window *> (dwRefData)->GetPresentation ().dark;
+                    auto theme_set = (std::intptr_t) GetProp (nm->hwndFrom, marker);
+
+                    if (theme_set != theme_dark + 1) {
+                        SetProp (nm->hwndFrom, marker, (HANDLE) (theme_dark + 1));
+                        SetWindowTheme (nm->hwndFrom, theme_dark ? L"DarkMode_Explorer" : NULL, NULL);
+                    }
+                }
+        }
+        return DefSubclassProc (hWnd, message, wParam, lParam);
+    }
+
     LRESULT CALLBACK StatusBarTooltipSubclassProcedure (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
                                                         UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
         switch (message) {
             case WM_NOTIFY:
-                auto nm = reinterpret_cast <NMHDR *> (lParam);
-                if (nm->code == TTN_GETDISPINFO) {
-
+                if (reinterpret_cast <NMHDR *> (lParam)->code == TTN_GETDISPINFO) {
                     auto nmTT = reinterpret_cast <TOOLTIPTEXT *> (lParam);
                     switch (wParam) {
+                        case 0: nmTT->lpszText = (LPWSTR) L"TBD: full path of open file, again"; return 0;
                         case 1: nmTT->lpszText = (LPWSTR) L"Current line and column"; return 0;
                         case 3: nmTT->lpszText = (LPWSTR) L"Disk: 160 kB, Memory: 500 kB, 10 kB of unsaved edits, 200 kB in undo steps"; return 0;
                         case 4: nmTT->lpszText = (LPWSTR) L"Ctrl+Wheel"; return 0;
@@ -204,6 +223,7 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
 
         SetWindowSubclass (hStatusBar, ProperBgSubclassProcedure, 1, (DWORD_PTR) this);
         SetWindowSubclass (hStatusBar, StatusBarTooltipSubclassProcedure, 0, (DWORD_PTR) this);
+        SetWindowSubclass (hStatusBar, TooltipThemeSubclassProcedure, 0, (DWORD_PTR) this);
 
         SendMessage (hStatusBar, SB_SIMPLE, FALSE, 0);
     }
