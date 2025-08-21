@@ -122,8 +122,10 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
         MENUITEM "Zoom &Out\tCtrl+Minus", 0x61
         MENUITEM "&Restore Default\tCtrl+0", 0x62
         MENUITEM SEPARATOR
-        MENUITEM "&Line Numbers",   0x6E
-        MENUITEM "&Status Bar",     0x6F
+        MENUITEM "&Line Numbers", 0x6E
+        MENUITEM "&Status Bar", 0x6F
+        MENUITEM SEPARATOR
+        MENUITEM "Full Screen\tF11", 0xFB
     }
     POPUP "&Help"
     {
