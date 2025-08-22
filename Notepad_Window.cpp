@@ -270,9 +270,8 @@ LRESULT Window::OnClose (WPARAM wParam) {
         } else {
             PostQuitMessage ((int) wParam);
         }
-    } else {
-        DestroyWindow (this->hWnd);
     }
+    DestroyWindow (this->hWnd);
     return 0;
 }
 
