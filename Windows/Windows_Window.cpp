@@ -212,6 +212,8 @@ LRESULT Windows::Window::Dispatch (UINT message, WPARAM wParam, LPARAM lParam) {
             this->OnKey (wParam, FALSE, LOWORD (lParam));
             break;
 
+        case WM_MENUSELECT:
+            return this->OnMenuSelect ((HMENU) lParam, LOWORD (wParam), HIWORD (wParam));
         case WM_COMMAND:
             return this->OnCommand (reinterpret_cast <HWND> (lParam), LOWORD (wParam), HIWORD (wParam));
         case WM_SYSCOMMAND:
@@ -255,9 +257,12 @@ LRESULT Windows::Window::Dispatch (UINT message, WPARAM wParam, LPARAM lParam) {
         case WM_DRAWITEM:
             return this->OnDrawItem (wParam, reinterpret_cast <DRAWITEMSTRUCT *> (lParam));
 
+        case WM_ENTERIDLE:
+            return this->OnEnterIdle (wParam, (HWND) lParam);
         case WM_NEXTMENU:
             return this->OnMenuNext (wParam, reinterpret_cast <MDINEXTMENU *> (lParam));
-            break;
+        case WM_INITMENUPOPUP:
+            return this->OnMenuOpen ((HMENU) wParam, LOWORD (lParam), HIWORD (lParam));
         case WM_UNINITMENUPOPUP:
             return this->OnMenuClose ((HMENU) wParam, HIWORD (lParam));
     }
@@ -331,8 +336,11 @@ LRESULT Windows::Window::OnCtlColor (HDC hDC, HWND hCtrl) {
 
 LRESULT Windows::Window::OnChar (WPARAM, LPARAM) { return 0; }
 LRESULT Windows::Window::OnKey (WPARAM vk, BOOL down, USHORT repeat) { return 0; }
-LRESULT Windows::Window::OnMenuClose (HMENU, USHORT mf) { return 0; }
+LRESULT Windows::Window::OnMenuOpen (HMENU, USHORT index, BOOL wndmenu) { return 0; }
+LRESULT Windows::Window::OnMenuSelect (HMENU, USHORT index, WORD flags) { return 0; }
 LRESULT Windows::Window::OnMenuNext (WPARAM vk, MDINEXTMENU * next) { return 0; }
+LRESULT Windows::Window::OnMenuClose (HMENU, USHORT mf) { return 0; }
+LRESULT Windows::Window::OnEnterIdle (WPARAM msgf, HWND hOwner) { return 0; }
 
 LRESULT Windows::Window::OnRegisteredMessage (UINT, WPARAM, LPARAM) { return 0; }
 LRESULT Windows::Window::OnUserMessage (UINT, WPARAM, LPARAM) { return 0; }

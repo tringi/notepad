@@ -388,10 +388,32 @@ void Window::ShowMenuAccelerators (BOOL show) {
     }
 }
 
+LRESULT Window::OnTimer (WPARAM id) {
+    switch (id) {
+        case TimerID::DarkMenuBarTracking:
+            if (auto hMenuBar = GetDlgItem (this->hWnd, ID::MENUBAR)) {
+                POINT pt;
+                if (GetCursorPos (&pt)) {
+                    MapWindowPoints (HWND_DESKTOP, hMenuBar, &pt, 1);
+
+                    auto item = SendMessage (hMenuBar, TB_HITTEST, 0, (LPARAM) &pt);
+                    if (item >= 0) {
+                        if (this->active_menu != item) {
+                            this->next_menu = item;
+                            SendMessage (this->hWnd, WM_CANCELMODE, 0, 0);
+                        }
+                    }
+                }
+            }
+            break;
+    }
+    return 0;
+}
+
 void Window::TrackMenu (UINT index) {
-    RECT r {};
     if (auto hMenuBar = GetDlgItem (this->hWnd, ID::MENUBAR)) {
 
+        RECT r {};
         if (SendMessage (hMenuBar, TB_GETITEMRECT, index, (LPARAM) &r)) {
             MapWindowPoints (this->hWnd, NULL, (POINT *) &r, 2);
 
@@ -401,23 +423,69 @@ void Window::TrackMenu (UINT index) {
                     style |= TPM_RIGHTALIGN;
                 }
 
+                this->next_menu = ~0;
                 this->active_menu = index;
+                this->dark_menu_tracking = this;
+                this->hActiveMenu = hSubMenu;
                 InvalidateRect (hMenuBar, NULL, TRUE);
 
+                SetTimer (this->hWnd, TimerID::DarkMenuBarTracking, USER_TIMER_MINIMUM, NULL);
                 TrackPopupMenu (hSubMenu, style, r.left, r.bottom, 0, this->hWnd, NULL);
+                KillTimer (this->hWnd, TimerID::DarkMenuBarTracking);
 
+                this->hActiveMenu = NULL;
+                this->dark_menu_tracking = nullptr;
                 this->active_menu = ~0;
                 InvalidateRect (hMenuBar, NULL, TRUE);
+
+                if (this->next_menu != ~0) {
+                    return this->TrackMenu (this->next_menu);
+                }
             }
         }
     }
 }
-LRESULT Window::OnMenuNext (WPARAM vk, MDINEXTMENU * next) {
-    // TODO
+
+void Window::OnTrackedMenuKey (HWND hMenuWindow, WPARAM vk) {
+    switch (vk) {
+        case VK_LEFT:
+            if (!this->bInSubMenu) {
+                if (this->active_menu != 0) {
+                    this->next_menu = this->active_menu - 1;
+                } else {
+                    this->next_menu = this->menu_size - 1;
+                }
+                SendMessage (this->hWnd, WM_CANCELMODE, 0, 0);
+            }
+            break;
+        case VK_RIGHT:
+            if (!this->bOnSubMenu) {
+                if (this->active_menu != this->menu_size - 1) {
+                    this->next_menu = this->active_menu + 1;
+                } else {
+                    this->next_menu = 0;
+                }
+                SendMessage (this->hWnd, WM_CANCELMODE, 0, 0);
+            }
+            break;
+    }
+}
+
+LRESULT Window::OnMenuSelect (HMENU menu, USHORT index, WORD flags) {
+    if (menu) {
+        this->bInSubMenu = (menu != this->hActiveMenu);
+        this->bOnSubMenu = (flags & MF_POPUP);
+    } else {
+        this->bInSubMenu = false;
+        this->bOnSubMenu = false;
+    }
     return 0;
 }
-LRESULT Window::OnMenuClose (HMENU, USHORT) {
-    this->ShowMenuAccelerators (false);
+
+LRESULT Window::OnMenuClose (HMENU menu, USHORT flags) {
+    if (menu == this->hActiveMenu) {
+        this->ShowMenuAccelerators (false);
+    }
     return 0;
 }
 
@@ -718,6 +786,8 @@ LRESULT Window::OnCopyData (HWND hSender, ULONG_PTR code, const void * data, std
 
     switch (code) {
         case CopyCode::OpenFileCheck:
+            // TODO: if single instance mode, open new Window
+
             return (size == sizeof (FILE_ID_INFO))
                 && this->IsFileOpen ((const FILE_ID_INFO *) data);
     }
@@ -734,13 +804,14 @@ void Window::RecreateMenuButtons (HWND hMenuBar) {
     button.fsStyle = BTNS_SHOWTEXT | BTNS_AUTOSIZE;
     button.iString = (INT_PTR) text;
 
-    for (auto i = 0u; ; ++i) {
-        if (GetMenuString (Window::menu, i, text, sizeof text / sizeof text [0], MF_BYPOSITION)) {
-            button.idCommand = i;
-            SendMessage (hMenuBar, TB_ADDBUTTONS, 1, (LPARAM) &button);
-        } else
-            break;
+    this->menu_size = 0;
+    while (GetMenuString (Window::menu, this->menu_size, text, sizeof text / sizeof text [0], MF_BYPOSITION)) {
+        button.idCommand = this->menu_size;
+        if (SendMessage (hMenuBar, TB_ADDBUTTONS, 1, (LPARAM) &button)) {
+            ++this->menu_size;
+        }
     }
+
     SendMessage (hMenuBar, TB_AUTOSIZE, 0, 0);
 }
 

@@ -46,6 +46,9 @@ namespace Windows {
         virtual LRESULT OnChar (WPARAM, LPARAM);
         virtual LRESULT OnCommand (HWND hChild, USHORT id, USHORT notification);
         virtual LRESULT OnNotify (WPARAM id, NMHDR *);
+        virtual LRESULT OnEnterIdle (WPARAM msgf, HWND hOwner);
+        virtual LRESULT OnMenuOpen (HMENU, USHORT index, BOOL wndmenu);
+        virtual LRESULT OnMenuSelect (HMENU, USHORT index, WORD flags);
         virtual LRESULT OnMenuNext (WPARAM vk, MDINEXTMENU * next);
         virtual LRESULT OnMenuClose (HMENU, USHORT mf);
         virtual LRESULT OnEndSession (WPARAM ending, LPARAM flags);

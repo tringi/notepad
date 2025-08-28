@@ -20,6 +20,7 @@
 
 const wchar_t * szVersionInfo [9];
 Windows::TextScale scale;
+HHOOK hHook = NULL;
 
 ATOM InitializeGUI (HINSTANCE);
 bool InitVersionInfoStrings (HINSTANCE);
@@ -30,9 +31,7 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
     SetLastError (0);
     if (Window::InitAtom (hInstance)) {
 
-        // remove quotes (if any)
-        // TODO: split to multiple paths // CommandLineToArgvW
-        // TODO: resolve relative and properly prefix to support long paths
+        // TODO: consider supporting multiple files
 
         /*auto argc = 0;
         auto args = CommandLineToArgvW (lpCmdLine, &argc);
@@ -41,10 +40,20 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
         for (auto i = 0; i != argc; ++i) {
             wchar_t full [32768];
             Windows::GetFullPath (args [i], 32768, full, nullptr);
-
             std::wprintf (L"%s\n", full);
         }
         std::printf ("\n");// */
+
+        // request to restore
+
+        if (lpCmdLine [0] == L'?' && lpCmdLine [1] == L'\0') {
+
+            // TODO: check registry for open file names, and (optional) diff buffers
+
+            return ERROR_CALL_NOT_IMPLEMENTED;
+        }
+
+        // remove quotes (if any)
 
         if (lpCmdLine [0] == L'"') {
             lpCmdLine++;
@@ -52,8 +61,16 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
                 *end = L'\0';
             }
         }
+
         if (lpCmdLine [0]) {
             // TODO: support passing file id like: <volume:id-bytes>
+
+            //RegisterApplicationRecoveryCallback;
+
+            // test:
+            //File f;
+            //f.Open (lpCmdLine, OPEN_ALWAYS);
+
 
             Windows::FileID id (lpCmdLine); // TODO: merge with 'Window'
             if (id.valid ()) {
@@ -73,7 +90,10 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
                                     return TRUE;
                                  }, (LPARAM) &id.info) == FALSE) {
 
-                    // other window has the file open and was activated, we're done here
+                    // other window has the file open and was activated, 
+                    // or the single instance mode is active,
+                    // we're done here
+
                     return ERROR_SUCCESS;
                 }
 
@@ -103,8 +123,27 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
                 && InitializeGUI (hInstance)
                 && scale.initialize ()) {
 
+            RegisterApplicationRestart (L"?", 0);
+
             const auto hAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (1));
             const auto hDarkMenuAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (2));
+
+            hHook = SetWindowsHookEx (WH_CALLWNDPROC,
+                                      [] (int code, WPARAM wParam, LPARAM lParam) -> LRESULT {
+                                          if (code == HC_ACTION) {
+                                              auto cwp = reinterpret_cast <const CWPSTRUCT *> (lParam);
+                                              switch (cwp->message) {
+                                                  case WM_KEYDOWN:
+                                                      if (Window::dark_menu_tracking != nullptr) {
+                                                          if (GetClassWord (cwp->hwnd, GCW_ATOM) == 32768) { // menu window class
+                                                              Window::dark_menu_tracking->OnTrackedMenuKey (cwp->hwnd, cwp->wParam);
+                                                          }
+                                                      }
+                                              }
+                                          }
+                                          return CallNextHookEx (hHook, code, wParam, lParam);
+                                      },
+                                      NULL, GetCurrentThreadId ());
 
             new Window;
 
