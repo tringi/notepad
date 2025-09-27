@@ -36,10 +36,60 @@ struct Editor {
     std::set <std::size_t, std::size_t>     deletions;
 };
 
-bool File::Open (const wchar_t * path, DWORD disposition) {
+bool File::init (HANDLE h) {
+    this->handle = h;
 
-    auto h = CreateFile (path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ,
-                         NULL, disposition, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (GetFileInformationByHandleEx (this->handle, FileIdInfo, &this->id, sizeof this->id)) {
+        this->id_type = ExtendedFileIdType;
+
+    } else {
+        BY_HANDLE_FILE_INFORMATION info;
+        if (GetFileInformationByHandle (this->handle, &info)) {
+
+            this->id_type = FileIdType;
+            this->id.VolumeSerialNumber = info.dwVolumeSerialNumber;
+            std::memcpy (&this->id.FileId.Identifier [0], &info.nFileIndexLow, sizeof info.nFileIndexLow);
+            std::memcpy (&this->id.FileId.Identifier [4], &info.nFileIndexHigh, sizeof info.nFileIndexHigh);
+            std::memset (&this->id.FileId.Identifier [8], 0, sizeof this->id.FileId.Identifier - 8);
+        } else {
+            this->id_type = MaximumFileIdType;
+        }
+    }
+    return true;
+}
+
+bool File::init (const wchar_t * path) {
+    this->handle = CreateFile (path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+    if (this->handle != INVALID_HANDLE_VALUE) {
+        return this->init (this->handle);
+    } else
+        return false;
+}
+
+bool File::open (bool writable) {
+    if (this->id_type == MaximumFileIdType)
+        return false;
+
+    FILE_ID_DESCRIPTOR descriptor {};
+    descriptor.dwSize = sizeof descriptor;
+    descriptor.Type = this->id_type;
+    switch (this->id_type) {
+
+        case FileIdType:
+            std::memcpy (&descriptor.FileId.LowPart, &this->id.FileId.Identifier [0], sizeof descriptor.FileId.LowPart);
+            std::memcpy (&descriptor.FileId.HighPart, &this->id.FileId.Identifier [4], sizeof descriptor.FileId.HighPart);
+            break;
+
+        case ExtendedFileIdType:
+            descriptor.ExtendedFileId = this->id.FileId;
+            break;
+    }
+
+    auto h = OpenFileById (this->handle, &descriptor,
+                           GENERIC_READ | (writable ? GENERIC_WRITE : 0),
+                           FILE_SHARE_READ, NULL, FILE_FLAG_SEQUENTIAL_SCAN);
+
     if (h != INVALID_HANDLE_VALUE) {
 
         // TODO: on commit, close mapping, append to the file, and reopen mapping
@@ -47,32 +97,40 @@ bool File::Open (const wchar_t * path, DWORD disposition) {
         LARGE_INTEGER size;
         if (GetFileSizeEx (h, &size)) {
             if (size.QuadPart) {
-                // TODO: how to handle file too large?
-                if (auto m = CreateFileMapping (h, NULL, PAGE_READWRITE, 0, 0, NULL)) {
-                    if (auto p = MapViewOfFile (m, FILE_MAP_ALL_ACCESS, 0, 0, 0)) {
 
-                        this->Close ();
+                // TODO: how to handle file that's too large?
+                if (auto m = CreateFileMapping (h, NULL,
+                                                writable ? PAGE_READWRITE : PAGE_READONLY,
+                                                0, 0, NULL)) {
+                    if (auto p = MapViewOfFile (m,
+                                                writable ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ,
+                                                0, 0, 0)) {
+                        this->close ();
+
                         this->handle = h;
                         this->mapping = m;
                         this->data = p;
                         return true;
                     }
+
                     CloseHandle (m);
                 }
             } else {
-                this->Close ();
+                // empty file
+                this->close ();
                 this->handle = h;
                 return true;
             }
         }
+
         CloseHandle (h);
     }
-
-    std::wprintf (L"error %u opening: %s\n", GetLastError (), path);
     return false;
 }
 
-void File::Close () {
+void File::close () {
+    this->id_type = MaximumFileIdType;
+
     if (this->data) {
         UnmapViewOfFile (this->data);
         this->data = nullptr;
@@ -87,27 +145,13 @@ void File::Close () {
     }
 }
 
-bool File::IsFileOpen () const noexcept {
+bool File::IsOpen () const noexcept {
     return this->handle != INVALID_HANDLE_VALUE;
 }
 
-bool File::IsFileOpen (const FILE_ID_INFO * check) const noexcept {
+bool File::IsOpen (const FILE_ID_INFO * check) const noexcept {
     if (this->handle == INVALID_HANDLE_VALUE)
         return false;
 
-    FILE_ID_INFO id {};
-    if (GetFileInformationByHandleEx (this->handle, FileIdInfo, &id, sizeof id))
-        return std::memcmp (check, &id, sizeof id) == 0;
-
-    BY_HANDLE_FILE_INFORMATION info;
-    if (GetFileInformationByHandle (this->handle, &info)) {
-
-        id.VolumeSerialNumber = info.dwVolumeSerialNumber;
-        std::memcpy (&id.FileId.Identifier [0], &info.nFileIndexLow, sizeof info.nFileIndexLow);
-        std::memcpy (&id.FileId.Identifier [4], &info.nFileIndexHigh, sizeof info.nFileIndexHigh);
-        std::memset (&id.FileId.Identifier [8], 0, sizeof id.FileId.Identifier - 8);
-
-        return std::memcmp (check, &id, sizeof id) == 0;
-    } else
-        return false;
+    return std::memcmp (check, &this->id, sizeof this->id) == 0;
 }
