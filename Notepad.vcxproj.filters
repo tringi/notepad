@@ -5,13 +5,7 @@
     <ClCompile Include="Windows\Windows_AccessibilityTextScale.cpp">
       <Filter>Windows</Filter>
     </ClCompile>
-    <ClCompile Include="Windows\Windows_FileID.cpp">
-      <Filter>Windows</Filter>
-    </ClCompile>
     <ClCompile Include="Windows\Windows_Font.cpp">
-      <Filter>Windows</Filter>
-    </ClCompile>
-    <ClCompile Include="Windows\Windows_SetThreadName.cpp">
       <Filter>Windows</Filter>
     </ClCompile>
     <ClCompile Include="Windows\Windows_LoadIcon.cpp">
@@ -38,6 +32,8 @@
       <Filter>Windows</Filter>
     </ClCompile>
     <ClCompile Include="Notepad_File.cpp" />
+    <ClCompile Include="Notepad_Window_StatusBar.cpp" />
+    <ClCompile Include="Notepad_Window_MenuBar.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Notepad.rc" />
@@ -52,13 +48,7 @@
     <ClInclude Include="Windows\Windows_AccessibilityTextScale.hpp">
       <Filter>Windows</Filter>
     </ClInclude>
-    <ClInclude Include="Windows\Windows_FileID.hpp">
-      <Filter>Windows</Filter>
-    </ClInclude>
     <ClInclude Include="Windows\Windows_Font.hpp">
-      <Filter>Windows</Filter>
-    </ClInclude>
-    <ClInclude Include="Windows\Windows_SetThreadName.hpp">
       <Filter>Windows</Filter>
     </ClInclude>
     <ClInclude Include="Windows\Windows_Symbol.hpp">
