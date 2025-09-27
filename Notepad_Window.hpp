@@ -4,6 +4,8 @@
 #include "Windows/Windows_Window.hpp"
 #include "Notepad_File.hpp"
 
+constexpr auto MAX_NT_PATH = 32768u;
+
 class Window
     : private Windows::Window
     , private File {
@@ -34,6 +36,8 @@ private:
     HMENU hActiveMenu = NULL;
 
 public:
+    using File::handle;
+
     struct ID {
         enum : WORD {
             FIRST_MENU_CMD = 0xA0,
@@ -55,12 +59,30 @@ public:
     };
     struct CopyCode {
         enum : ULONG_PTR {
-            OpenFileCheck = 1,
+            OpenFile      = 1, // data = full path
+            OpenFileCheck = 2, // data = FILE_ID_INFO
         };
+    };
+    struct OpenFileRequest {
+        std::int64_t handle;
+        std::uint8_t nCmdShow;
+        std::uint8_t reserved [7];
     };
     struct TimerID {
         enum : UINT_PTR {
             DarkMenuBarTracking = 1,
+            UnCloak = 2,
+        };
+    };
+    struct StatusBarCell {
+        enum : UCHAR {
+            FileName = 0,
+            CursorPosition = 1,
+            Reserved = 2,
+            FileSize = 3,
+            ZoomLevel = 4,
+            LineEnds = 5,
+            Encoding = 6,
         };
     };
 
@@ -68,7 +90,8 @@ public:
     static ATOM Initialize (HINSTANCE hInstance);
 
 public:
-    Window ();
+    explicit Window (int show);
+    explicit Window (int show, File &&);
 
 private:
     virtual LRESULT OnCreate (const CREATESTRUCT *) override;
@@ -90,11 +113,19 @@ private:
     virtual LRESULT OnUserMessage (UINT, WPARAM, LPARAM) override;
     virtual LRESULT OnCopyData (HWND, ULONG_PTR, const void *, std::size_t) override;
 
+    void CommonConstructor (int show);
     void TrackMenu (UINT index);
     void ShowMenuAccelerators (BOOL show);
     void RecreateMenuButtons (HWND hMenuBar);
+    void UpdateFileName ();
     LONG UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE size);
     HBRUSH CreateDarkMenuBarBrush ();
+
+    LRESULT OnDrawStatusBar (WPARAM id, const DRAWITEMSTRUCT * draw);
+    LRESULT OnDrawMenuNote (WPARAM id, const DRAWITEMSTRUCT * draw);
+    LRESULT OnNotifyStatusBar (WPARAM id, NMHDR *);
+    LRESULT OnNotifyMenuBar (WPARAM id, NMHDR *);
+    LRESULT OnTimerDarkMenuBarTracking (WPARAM id);
 
 public:
     void OnTrackedMenuKey (HWND hMenuWindow, WPARAM vk);

@@ -10,26 +10,174 @@
 #include <VersionHelpers.h>
 
 #include "Notepad_Window.hpp"
-#include "Windows\Windows_FileID.hpp"
+#include "Notepad_Settings.hpp"
+#include "Notepad_File.hpp"
+
 #include "Windows\Windows_GetFullPath.hpp"
-#include "Windows\Windows_SetThreadName.hpp"
 #include "Windows\Windows_AccessibilityTextScale.hpp"
 
-#include <list>
 #include <cwchar>
+#include <vector>
+#include <set>
 
-const wchar_t * szVersionInfo [9];
+const wchar_t * szVersionInfo [9] = {};
+wchar_t szTmpPathBuffer [MAX_NT_PATH];
 Windows::TextScale scale;
 HHOOK hHook = NULL;
 
+constexpr DWORD SingleInstanceDefault = 1;
+
 ATOM InitializeGUI (HINSTANCE);
 bool InitVersionInfoStrings (HINSTANCE);
+DWORD WINAPI ApplicationRecoveryCallback (PVOID);
+
+std::uint8_t ForwardProperShowStyle (unsigned int nCmdShow) {
+    if (nCmdShow == SW_SHOWDEFAULT) {
+        STARTUPINFO si {};
+        si.cb = sizeof si;
+        GetStartupInfo (&si);
+        if (si.dwFlags & STARTF_USESHOWWINDOW) {
+            nCmdShow = si.wShowWindow;
+        } else {
+            nCmdShow = SW_SHOWNORMAL;
+        }
+    }
+    if (nCmdShow > SW_MAX) {
+        nCmdShow = SW_SHOWNORMAL;
+    }
+    return nCmdShow;
+}
+
+bool AskInstancesForOpenFile (File * file, std::map <DWORD, HWND> * instances) {
+    struct Trampoline {
+        File * file;
+        std::map <DWORD, HWND> * instances;
+    } p = { file, instances };
+
+    return EnumWindows ([] (HWND hWnd, LPARAM p) {
+                            if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
+                                auto trampoline = (Trampoline *) p;
+
+                                COPYDATASTRUCT data = {
+                                    Window::CopyCode::OpenFileCheck,
+                                    sizeof (FILE_ID_INFO),
+                                    (void *) &trampoline->file->id
+                                };
+
+                                DWORD_PTR result = 0;
+                                if (SendMessageTimeout (hWnd, WM_COPYDATA, NULL, (LPARAM) &data,
+                                                        SMTO_NOTIMEOUTIFNOTHUNG | SMTO_ERRORONEXIT | SMTO_BLOCK,
+                                                        1000, &result)) {
+                                    if (result) {
+                                        if (IsIconic (hWnd)) {
+                                            OpenIcon (hWnd);
+                                        }
+                                        SetForegroundWindow (hWnd);
+                                        return FALSE;
+                                    }
+                                }
+
+                                DWORD pid;
+                                if (GetWindowThreadProcessId (hWnd, &pid)) {
+                                    try {
+                                        trampoline->instances->insert ({ pid, hWnd });
+                                    } catch (...) {
+                                        // ignore failures to insert
+                                    }
+                                }
+                            }
+                            return TRUE;
+                        }, (LPARAM) &p) == FALSE;
+}
+
+BOOL CloseHandleEx (HANDLE hProcess, HANDLE hHandle) {
+    HANDLE hCleanup = NULL;
+    if (DuplicateHandle (hProcess, hHandle, GetCurrentProcess (), &hCleanup, 0, FALSE, DUPLICATE_CLOSE_SOURCE)) {
+        CloseHandle (hCleanup);
+        return TRUE;
+    } else
+        return FALSE;
+}
+
+bool AskInstanceToOpenFile (DWORD pid, HWND hWnd, HANDLE hFile, int nCmdShow) {
+    if (HANDLE hPeer = OpenProcess (PROCESS_DUP_HANDLE, FALSE, pid)) {
+        HANDLE hPeerFile = NULL;
+
+        if (DuplicateHandle (GetCurrentProcess (), hFile, hPeer, &hPeerFile, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+
+            Window::OpenFileRequest request = {};
+            request.handle = (std::intptr_t) hPeerFile;
+            request.nCmdShow = ForwardProperShowStyle (nCmdShow);
+
+            COPYDATASTRUCT data = {
+                Window::CopyCode::OpenFile,
+                sizeof request, &request
+            };
+
+            if (auto hPeerWindow = (HWND) SendMessage (hWnd, WM_COPYDATA, NULL, (LPARAM) &data)) {
+                SetForegroundWindow (hPeerWindow);
+                return true;
+            }
+
+            // on failure, cleanup the handle we copied into the other process, to not lock the file
+
+            CloseHandleEx (hPeer, hPeerFile);
+        } else {
+            // printf (" DuplicateHandle error %lu\n", GetLastError ());
+        }
+    } else {
+        // printf (" OpenProcess error %lu\n", GetLastError ());
+    }
+    return false;
+}
+
+bool AskInstancesToOpenWindow (int nCmdShow) {
+    return EnumWindows ([] (HWND hWnd, LPARAM nCmdShow) {
+                            if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
+
+                                Window::OpenFileRequest request = {};
+                                request.nCmdShow = ForwardProperShowStyle (nCmdShow);
+
+                                COPYDATASTRUCT data = {
+                                    Window::CopyCode::OpenFile,
+                                    sizeof request, &request
+                                };
+
+                                DWORD pid;
+                                if (GetWindowThreadProcessId (hWnd, &pid)) {
+                                    AllowSetForegroundWindow (pid);
+                                }
+
+                                DWORD_PTR result = 0;
+                                if (SendMessageTimeout (hWnd, WM_COPYDATA, NULL, (LPARAM) &data,
+                                                        SMTO_NOTIMEOUTIFNOTHUNG | SMTO_ERRORONEXIT | SMTO_BLOCK,
+                                                        1000, &result)) {
+                                    if (result)
+                                        return FALSE;
+                                }
+                            }
+                            return TRUE;
+                        }, (LPARAM) nCmdShow) == FALSE;
+}
 
 int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
-    Windows::SetThreadName (L"GUI");
+    // Windows::SetThreadName (L"GUI");
+
+    if (AttachConsole (ATTACH_PARENT_PROCESS)) {
+        BindCrtHandlesToStdHandles (true, true, true);
+    } else
+    if (IsDebuggerPresent ()) {
+        AllocConsole ();
+        BindCrtHandlesToStdHandles (true, true, true);
+    }
 
     SetLastError (0);
     if (Window::InitAtom (hInstance)) {
+
+        // this should have the effect of allowing one previously admin/elevated instance
+        // to open another file, which would need entering credentials again, probably
+
+        ChangeWindowMessageFilter (WM_COPYDATA, MSGFLT_ADD);
 
         // TODO: consider supporting multiple files
 
@@ -62,56 +210,40 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
             }
         }
 
+        File file;
+
         if (lpCmdLine [0]) {
-            // TODO: support passing file id like: <volume:id-bytes>
+            // TODO: support passing file id like: <volume:id-bytes> for OpenFileById
 
-            //RegisterApplicationRecoveryCallback;
+            std::map <DWORD, HWND> instances;
 
-            // test:
-            //File f;
-            //f.Open (lpCmdLine, OPEN_ALWAYS);
+            if (file.init (lpCmdLine)) {
 
+                // ask other instances/windows if they have this file open
+                // if one answers yes: activates the window and return true
 
-            Windows::FileID id (lpCmdLine); // TODO: merge with 'Window'
-            if (id.valid ()) {
-
-                if (EnumWindows ([] (HWND hWnd, LPARAM pFileId) {
-                                    if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
-                                        COPYDATASTRUCT data = {
-                                            Window::CopyCode::OpenFileCheck,
-                                            sizeof (FILE_ID_INFO),
-                                            (void *) pFileId
-                                        };
-                                        if (SendMessage (hWnd, WM_COPYDATA, NULL, (LPARAM) &data)) {
-                                            SetForegroundWindow (hWnd);
-                                            return FALSE;
-                                        }
-                                    }
-                                    return TRUE;
-                                 }, (LPARAM) &id.info) == FALSE) {
-
-                    // other window has the file open and was activated, 
-                    // or the single instance mode is active,
-                    // we're done here
-
+                if (AskInstancesForOpenFile (&file, &instances))
                     return ERROR_SUCCESS;
+
+                // if there is at least one instance running, ask it to open the file
+
+                if (instances.size ()) {
+                    if (InitVersionInfoStrings (hInstance)) {
+
+                        Settings::Init ();
+                        if (Settings::Get (L"Single Instance", SingleInstanceDefault)) {
+
+                            for (auto [pid, hWnd] : instances) {
+                                if (AskInstanceToOpenFile (pid, hWnd, file.handle, nCmdShow))
+                                    return ERROR_SUCCESS;
+                            }
+                        }
+                    }
                 }
-
-
-                std::printf ("FILE ID:");
-                for (auto i = 0u; i != 16u; ++i) {
-                    std::printf (" %02x", id.info.FileId.Identifier [i]);
-                }
-                std::printf ("\n");
-
-                // ask other instances if they have it open
-                //  - yes: activate them and end
-                //  - no: OpenFileById (...) // share only for read
-                //     - on share failure
-                //        - ask if really edit (a copy (disable 'Save')) or read-only
-                //     - check if there's unsaved buffer and the file hasn't changed since
             } else {
-                // ask if to create new file?
+                
+                // file name does not exist, what now?
+                printf ("file name does not exist\n");
             }
         }
 
@@ -119,119 +251,136 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
         //   - file may not exist, ask to create
         //   - have file size, ask other instances if they can map it (if not, reuse this one)
 
-        if (InitVersionInfoStrings (hInstance)
-                && InitializeGUI (hInstance)
-                && scale.initialize ()) {
+        if (InitVersionInfoStrings (hInstance)) {
 
-            RegisterApplicationRestart (L"?", 0);
+            Settings::Init ();
+            if (Settings::Get (L"Single Instance", SingleInstanceDefault)) {
 
-            const auto hAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (1));
-            const auto hDarkMenuAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (2));
-
-            hHook = SetWindowsHookEx (WH_CALLWNDPROC,
-                                      [] (int code, WPARAM wParam, LPARAM lParam) -> LRESULT {
-                                          if (code == HC_ACTION) {
-                                              auto cwp = reinterpret_cast <const CWPSTRUCT *> (lParam);
-                                              switch (cwp->message) {
-                                                  case WM_KEYDOWN:
-                                                      if (Window::dark_menu_tracking != nullptr) {
-                                                          if (GetClassWord (cwp->hwnd, GCW_ATOM) == 32768) { // menu window class
-                                                              Window::dark_menu_tracking->OnTrackedMenuKey (cwp->hwnd, cwp->wParam);
-                                                          }
-                                                      }
-                                              }
-                                          }
-                                          return CallNextHookEx (hHook, code, wParam, lParam);
-                                      },
-                                      NULL, GetCurrentThreadId ());
-
-            new Window;
-
-            MSG message {};
-            const HANDLE handles [] = {
-                scale.GetEventHandle ()
-            };
-            constexpr DWORD nHandles = sizeof handles / sizeof handles [0];
-
-            DWORD mwmoFlags = 0x04FFu;
-            if (IsWindows8OrGreater ()) {
-                mwmoFlags |= QS_TOUCH | QS_POINTER;
+                if (AskInstancesToOpenWindow (nCmdShow))
+                    return ERROR_SUCCESS;
             }
 
-            do
-            switch (MsgWaitForMultipleObjectsEx (nHandles, handles, INFINITE, mwmoFlags, 0)) {
-                case WAIT_OBJECT_0 + 0:
-                    if (scale.OnEvent ()) {
-                        EnumThreadWindows (GetCurrentThreadId (),
-                                           [] (HWND hWnd, LPARAM lParam) {
-                                               PostMessage (hWnd, Window::Message::UpdateFontSize, 0, 0);
-                                               return TRUE;
-                                           }, NULL);
-                    }
-                    break;
+            if (InitializeGUI (hInstance)
+                    && scale.initialize ()) {
 
-                case WAIT_OBJECT_0 + nHandles:
-                    while (PeekMessage (&message, NULL, 0u, 0u, PM_REMOVE)) {
-                        if (message.message == WM_QUIT) {
-                            break;
+                RegisterApplicationRestart (L"?", 0);
+                //RegisterApplicationRecoveryCallback (
+
+                const auto hAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (1));
+                const auto hDarkMenuAccelerators = LoadAccelerators (hInstance, MAKEINTRESOURCE (2));
+
+                hHook = SetWindowsHookEx (WH_CALLWNDPROC,
+                                          [] (int code, WPARAM wParam, LPARAM lParam) -> LRESULT {
+                                              if (code == HC_ACTION) {
+                                                  auto cwp = reinterpret_cast <const CWPSTRUCT *> (lParam);
+                                                  switch (cwp->message) {
+                                                      case WM_KEYDOWN:
+                                                          if (Window::dark_menu_tracking != nullptr) {
+                                                              if (GetClassWord (cwp->hwnd, GCW_ATOM) == 32768) { // menu window class
+                                                                  Window::dark_menu_tracking->OnTrackedMenuKey (cwp->hwnd, cwp->wParam);
+                                                              }
+                                                          }
+                                                  }
+                                              }
+                                              return CallNextHookEx (hHook, code, wParam, lParam);
+                                          },
+                                          NULL, GetCurrentThreadId ());
+
+                new Window (nCmdShow, std::move (file));
+
+                MSG message {};
+                const HANDLE handles [] = {
+                    scale.GetEventHandle ()
+                };
+                constexpr DWORD nHandles = sizeof handles / sizeof handles [0];
+
+                DWORD mwmoFlags = 0x04FFu;
+                if (IsWindows8OrGreater ()) {
+                    mwmoFlags |= QS_TOUCH | QS_POINTER;
+                }
+
+                do
+                switch (MsgWaitForMultipleObjectsEx (nHandles, handles, INFINITE, mwmoFlags, 0)) {
+                    case WAIT_OBJECT_0 + 0:
+                        if (scale.OnEvent ()) {
+                            EnumThreadWindows (GetCurrentThreadId (),
+                                               [] (HWND hWnd, LPARAM lParam) {
+                                                   PostMessage (hWnd, Window::Message::UpdateFontSize, 0, 0);
+                                                   return TRUE;
+                                               }, NULL);
                         }
-                        switch (message.message) {
-                            case WM_SYSKEYDOWN:
-                                switch (message.wParam) {
-                                    case VK_MENU:
-                                        if (auto root = GetAncestor (message.hwnd, GA_ROOT)) {
-                                            PostMessage (root, Window::Message::ShowAccelerators, 0, 0);
-                                        }
-                                        break;
-                                }
-                        }
+                        break;
 
-                        if (message.hwnd) {
-                            auto root = GetAncestor (message.hwnd, GA_ROOT);
-
-                            if (Window::GetPresentation ().dark) {
-                                if (TranslateAccelerator (root, hDarkMenuAccelerators, &message))
-                                    continue;
+                    case WAIT_OBJECT_0 + nHandles:
+                        while (PeekMessage (&message, NULL, 0u, 0u, PM_REMOVE)) {
+                            if (message.message == WM_QUIT) {
+                                break;
                             }
-                            if (TranslateAccelerator (root, hAccelerators, &message))
-                                continue;
-
-                        } else {
                             switch (message.message) {
-                                case WM_COMMAND:
+                                case WM_SYSKEYDOWN:
                                     switch (message.wParam) {
-                                        case 0xCF:
-                                            EnumThreadWindows (GetCurrentThreadId (),
-                                                               [] (HWND hWnd, LPARAM lParam) {
-                                                                   PostMessage (hWnd, WM_CLOSE, 0, 0);
-                                                                   return TRUE;
-                                                               }, NULL);
+                                        case VK_MENU:
+                                            if (auto root = GetAncestor (message.hwnd, GA_ROOT)) {
+                                                PostMessage (root, Window::Message::ShowAccelerators, 0, 0);
+                                            }
                                             break;
                                     }
-                                    break;
                             }
+
+                            if (message.hwnd) {
+                                auto root = GetAncestor (message.hwnd, GA_ROOT);
+
+                                if (Window::GetPresentation ().dark) {
+                                    if (TranslateAccelerator (root, hDarkMenuAccelerators, &message))
+                                        continue;
+                                }
+                                if (TranslateAccelerator (root, hAccelerators, &message))
+                                    continue;
+
+                            } else {
+                                switch (message.message) {
+                                    case WM_COMMAND:
+                                        switch (message.wParam) {
+                                            case 0xCF:
+                                                EnumThreadWindows (GetCurrentThreadId (),
+                                                                   [] (HWND hWnd, LPARAM lParam) {
+                                                                       PostMessage (hWnd, WM_CLOSE, 0, 0);
+                                                                       return TRUE;
+                                                                   }, NULL);
+                                                break;
+                                        }
+                                        break;
+
+                                    case Window::Message::UpdateSettings:
+
+                                        break;
+                                }
+                            }
+                            TranslateMessage (&message);
+                            DispatchMessage (&message);
                         }
-                        TranslateMessage (&message);
-                        DispatchMessage (&message);
-                    }
-                    break;
+                        break;
 
-                default:
-                case WAIT_FAILED:
-                    return (int) GetLastError ();
+                    default:
+                    case WAIT_FAILED:
+                        return (int) GetLastError ();
 
-            } while (message.message != WM_QUIT);
+                } while (message.message != WM_QUIT);
 
-            scale.terminate ();
+                scale.terminate ();
 
-            CoUninitialize ();
-            return (int) message.wParam;
+                CoUninitialize ();
+                return (int) message.wParam;
+            }
         }
     }
     return (int) GetLastError ();
 }
 
 bool InitVersionInfoStrings (HINSTANCE hInstance) {
+    if (szVersionInfo [0])
+        return true;
+
     if (HRSRC hRsrc = FindResource (hInstance, MAKEINTRESOURCE (1), RT_VERSION)) {
         if (HGLOBAL hGlobal = LoadResource (hInstance, hRsrc)) {
             auto data = LockResource (hGlobal);
@@ -299,3 +448,15 @@ ATOM InitializeGUI (HINSTANCE hInstance) {
     Windows::WindowPresentation::Initialize ();
     return Window::Initialize (hInstance);
 }
+
+DWORD WINAPI ApplicationRecoveryCallback (PVOID) {
+    BOOL cancelled = FALSE;
+    ApplicationRecoveryInProgress (&cancelled);
+
+    // dump diff data for all open files, and set open file IDs to registry, for recovery
+    // TODO: do the same for all open files, as each window does for WM_QUERYENDSESSION
+
+    ApplicationRecoveryFinished (TRUE); // success?
+    return 0;
+}
+

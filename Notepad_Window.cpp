@@ -1,15 +1,19 @@
 #include "Notepad_Window.hpp"
+#include "Notepad_Settings.hpp"
+
 #include "Windows\Windows_Symbol.hpp"
 #include "Windows\Windows_AccessibilityTextScale.hpp"
 #include "Windows\Windows_CreateSolidBrushEx.hpp"
 #include "Windows\Windows_IsWindowsBuildOrGreater.hpp"
 #include "Windows\Windows_GetCurrentModuleHandle.hpp"
-#include "Windows\Windows_DrawTextComposited.hpp"
 
 #include <commdlg.h>
 
 extern Windows::TextScale scale;
-static constexpr auto MAX_NT_PATH = 32768u;
+extern wchar_t szTmpPathBuffer [MAX_NT_PATH];
+
+LRESULT CALLBACK StatusBarTooltipSubclassProcedure (HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
+LRESULT CALLBACK TooltipThemeSubclassProcedure (HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 
 namespace {
     HMODULE LoadResourcesModule () {
@@ -77,46 +81,6 @@ namespace {
         return DefSubclassProc (hWnd, message, wParam, lParam);
     }
 
-    LRESULT CALLBACK TooltipThemeSubclassProcedure (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
-                                                    UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
-        switch (message) {
-            case WM_NOTIFY:
-                auto nm = reinterpret_cast <NMHDR *> (lParam);
-                if (nm->code == TTN_SHOW) {
-
-                    auto marker = L"TRIMCORE.ThemeSet";
-                    auto theme_dark = (std::intptr_t) reinterpret_cast <Window *> (dwRefData)->GetPresentation ().dark;
-                    auto theme_set = (std::intptr_t) GetProp (nm->hwndFrom, marker);
-
-                    if (theme_set != theme_dark + 1) {
-                        SetProp (nm->hwndFrom, marker, (HANDLE) (theme_dark + 1));
-                        SetWindowTheme (nm->hwndFrom, theme_dark ? L"DarkMode_Explorer" : NULL, NULL);
-                    }
-                }
-        }
-        return DefSubclassProc (hWnd, message, wParam, lParam);
-    }
-
-    LRESULT CALLBACK StatusBarTooltipSubclassProcedure (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
-                                                        UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
-        switch (message) {
-            case WM_NOTIFY:
-                if (reinterpret_cast <NMHDR *> (lParam)->code == TTN_GETDISPINFO) {
-                    auto nmTT = reinterpret_cast <TOOLTIPTEXT *> (lParam);
-                    switch (wParam) {
-                        case 0: nmTT->lpszText = (LPWSTR) L"TBD: full path of open file, again"; return 0;
-                        case 1: nmTT->lpszText = (LPWSTR) L"Current line and column"; return 0;
-                        case 3: nmTT->lpszText = (LPWSTR) L"Disk: 160 kB, Memory: 500 kB, 10 kB of unsaved edits, 200 kB in undo steps"; return 0;
-                        case 4: nmTT->lpszText = (LPWSTR) L"Ctrl+Wheel"; return 0;
-                        case 5: nmTT->lpszText = (LPWSTR) L"Windows mode, click to change"; return 0;
-                        case 6: nmTT->lpszText = (LPWSTR) L"Click to change"; return 0;
-                    }
-                    return 0;
-                }
-        }
-        return DefSubclassProc (hWnd, message, wParam, lParam);
-    }
-
     ATOM atomCOMBOBOX = 0;
 }
 
@@ -132,7 +96,14 @@ ATOM Window::Initialize (HINSTANCE hInstance) {
     Window::menu = LoadMenu (hInstance, MAKEINTRESOURCE (1));
     Window::wndmenu = LoadMenu (hInstance, MAKEINTRESOURCE (2));
 
-    if (!IsWindows11OrGreater ()) {
+    if (IsWindows11OrGreater ()) {
+        if (Settings::Get (0x5A, 0)) {
+            CheckMenuItem (menu, 0x5A, MF_BYCOMMAND | MF_CHECKED);
+        }
+        if (Settings::Get (0x5B, 0)) {
+            CheckMenuItem (menu, 0x5B, MF_BYCOMMAND | MF_CHECKED);
+        }
+    } else {
         EnableMenuItem (menu, 0x5A, MF_BYCOMMAND | MF_GRAYED);
         CheckMenuItem (menu, 0x5A, MF_BYCOMMAND | MF_CHECKED);
         EnableMenuItem (menu, 0x5B, MF_BYCOMMAND | MF_GRAYED);
@@ -143,20 +114,44 @@ ATOM Window::Initialize (HINSTANCE hInstance) {
     return Window::atom;
 }
 
-Window::Window ()
+Window::Window (int show)
     : Windows::Window (this->rsrc, MAKEINTRESOURCE (2)) {
 
+    this->CommonConstructor (show);
+}
+
+Window::Window (int show, File && file)
+    : Windows::Window (this->rsrc, MAKEINTRESOURCE (2))
+    , File (std::move (file)) {
+
+    this->CommonConstructor (show);
+}
+
+void Window::CommonConstructor (int show) {
     this->icons.aux.try_emplace (1);
 
-    DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VISIBLE;
-    DWORD extra = WS_EX_COMPOSITED;
-    
+    DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
+    DWORD extra = 0; // WS_EX_COMPOSITED; // prevents flashbang on start, but makes everything flash on repaint
+
     // TODO: last position?
 
-    this->Create (this->instance, this->atom, style, extra);
+    ShowWindow (this->Create (this->instance, this->atom, style, extra), show);
 }
 
 LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
+
+    // in dark mode, to prevent flashbang, we cloak the window
+    // and uncloak it after first painting has finished;
+    // unfortunatelly we lose the window opening animation
+
+    if (auto option = Settings::Get (L"Start Cloaked", 1)) {
+        if (this->global.dark || (option > 1)) {
+            BOOL cloak = TRUE;
+            DwmSetWindowAttribute (this->hWnd, DWMWA_CLOAK, &cloak, sizeof (cloak));
+            SetTimer (this->hWnd, TimerID::UnCloak, 10, NULL);
+        }
+    }
+
     ChangeWindowMessageFilter (Window::Message::UpdateSettings, MSGFLT_ADD);
 
     if (IsWindows11OrGreater ()) {
@@ -187,11 +182,13 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
         }
     }
 
-    if (auto hMenuBar = CreateWindowEx (WS_EX_COMPOSITED, TOOLBARCLASSNAME, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS
+    if (auto hMenuBar = CreateWindowEx (0, TOOLBARCLASSNAME, L"", WS_CHILD | WS_VISIBLE
                                         | CCS_NODIVIDER | CCS_NOPARENTALIGN | CCS_NORESIZE | TBSTYLE_FLAT | TBSTYLE_TRANSPARENT,
                                         0, 0, 0, 0, hWnd, (HMENU) ID::MENUBAR, cs->hInstance, NULL)) {
 
-        SetWindowSubclass (hMenuBar, ProperBgSubclassProcedure, 0, (DWORD_PTR) this);
+        if (IsWindows11OrGreater ()) {
+            SetWindowSubclass (hMenuBar, ProperBgSubclassProcedure, 0, (DWORD_PTR) this);
+        }
 
         SendMessage (hMenuBar, TB_BUTTONSTRUCTSIZE, sizeof (TBBUTTON), 0);
         SendMessage (hMenuBar, TB_SETEXTENDEDSTYLE, 0, TBSTYLE_EX_MIXEDBUTTONS);
@@ -208,7 +205,7 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
     CreateWindowEx (0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_OWNERDRAW,
                     0, 0, 0, 0, hWnd, (HMENU) ID::SEPARATOR, cs->hInstance, NULL);
 
-    if (auto hEditor = CreateWindowEx (0, L"EDIT", L"Editor", WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL | ES_MULTILINE | ES_WANTRETURN,
+    if (auto hEditor = CreateWindowEx (0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL | ES_MULTILINE | ES_WANTRETURN,
                                        0, 0, 0, 0, hWnd, (HMENU) ID::EDITOR, cs->hInstance, NULL)) {
         // This is temporary
     }
@@ -218,7 +215,7 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
         style |= SBARS_SIZEGRIP;
     }
 
-    if (auto hStatusBar = CreateWindowEx (WS_EX_COMPOSITED, STATUSCLASSNAME, L"", style,
+    if (auto hStatusBar = CreateWindowEx (0, STATUSCLASSNAME, L"", style,
                                           0, 0, 0, 0, hWnd, (HMENU) ID::STATUSBAR, cs->hInstance, NULL)) {
 
         SetWindowSubclass (hStatusBar, ProperBgSubclassProcedure, 1, (DWORD_PTR) this);
@@ -228,14 +225,52 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
         SendMessage (hStatusBar, SB_SIMPLE, FALSE, 0);
     }
 
-    // TODO: construct window caption
-
-    extern const wchar_t * szVersionInfo [9];
-    SetWindowText (this->hWnd, szVersionInfo [0]);
+    this->UpdateFileName ();
 
     this->OnVisualEnvironmentChange ();
     this->OnDpiChange (NULL, this->dpi);
     return 0;
+}
+
+void Window::UpdateFileName () {
+    extern const wchar_t * szVersionInfo [9];
+
+    if (this->handle != INVALID_HANDLE_VALUE) {
+        if (GetFinalPathNameByHandle (this->handle, szTmpPathBuffer, MAX_NT_PATH, 0)) {
+            DWORD offset = 0;
+
+            // remove prefixes
+            if (std::wcsncmp (szTmpPathBuffer, L"\\\\?\\UNC\\", 8) == 0) {
+                szTmpPathBuffer [6] = L'\\';
+                offset = 6;
+            } else
+            if (std::wcsncmp (szTmpPathBuffer, L"\\\\?\\", 4) == 0) {
+                offset = 4;
+            }
+
+            // status bar
+            SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, (LPARAM) (szTmpPathBuffer + offset));
+
+            // construct caption
+            if (auto file = std::wcsrchr (szTmpPathBuffer, L'\\')) {
+                std::wmemmove (szTmpPathBuffer, file + 1, std::wcslen (file));
+            }
+
+        } else {
+            SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, (LPARAM) L"\x2370");
+            std::wcscpy (szTmpPathBuffer, L"\x2370");
+        }
+
+        std::wcscat (szTmpPathBuffer, L" \x2013 ");
+    } else {
+        SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, (LPARAM) L"");
+        szTmpPathBuffer [0] = L'\0';
+    }
+
+    // TODO: prefix with symbol if there are unsaved changes; maybe use taskbar overlay
+
+    std::wcscat (szTmpPathBuffer, szVersionInfo [0]);
+    SetWindowText (this->hWnd, szTmpPathBuffer);
 }
 
 LRESULT Window::OnFinalize () {
@@ -248,7 +283,7 @@ LRESULT Window::OnActivate (WORD activated, BOOL minimized, HWND hOther) {
         SetFocus (GetDlgItem (this->hWnd, (int) ID::EDITOR));
     }
     InvalidateRect (GetDlgItem (this->hWnd, ID::STATUSBAR), NULL, TRUE);
-    InvalidateRect (GetDlgItem (this->hWnd, ID::MENUNOTE), NULL, TRUE);
+    InvalidateRect (GetDlgItem (this->hWnd, ID::MENUNOTE), NULL, FALSE);
     this->ShowMenuAccelerators (false);
     return TRUE;
 }
@@ -289,39 +324,6 @@ SIZE GetClientSize (HWND hWnd) {
         return { r.right - r.left, r.bottom - r.top };
     } else
         return { 0, 0 };
-}
-
-LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
-    SendMessage (hStatusBar, WM_SIZE, 0, MAKELPARAM (parent.cx, parent.cy));
-
-    SIZE status = GetClientSize (hStatusBar);
-
-    static const short widths [] = { 64, 64, 52, 44, 44, 96, 128 };
-    static const auto  n = sizeof widths / sizeof widths [0];
-
-    int scaled [n + 1] = {};
-    int offset = parent.cx;
-    int i = n;
-
-    while (i-- != 0) {
-        offset -= dpi * widths [i] / USER_DEFAULT_SCREEN_DPI;
-        scaled [i] = offset;
-    }
-
-    scaled [n] = -1;
-
-    this->minimum.statusbar = { parent.cx - scaled [0], status.cy };
-    SendMessage (hStatusBar, SB_SETPARTS, n + 1, (LPARAM) scaled);
-
-    SendMessage (hStatusBar, SB_SETTEXT, 0 | SBT_OWNERDRAW, (LPARAM) L"C:\\Full\\File\\Path\\here.txt"); // right click for menu: Copy Path, Open Path, Properties
-
-    SendMessage (hStatusBar, SB_SETTEXT, 1 | SBT_OWNERDRAW, (LPARAM) L"5\x2236""16"); // TODO: click to Go To
-    SendMessage (hStatusBar, SB_SETTEXT, 3 | SBT_OWNERDRAW, (LPARAM) L"240\x200AkB");
-    SendMessage (hStatusBar, SB_SETTEXT, 4 | SBT_OWNERDRAW, (LPARAM) L"100\x200A%"); // TODO: click to Zoom
-    SendMessage (hStatusBar, SB_SETTEXT, 5 | SBT_OWNERDRAW, (LPARAM) L"CR LF"); // TODO: click to change
-    SendMessage (hStatusBar, SB_SETTEXT, 6 | SBT_OWNERDRAW, (LPARAM) L"Windows 1250"); // UTF-16 LE, click to change
-
-    return status.cy;
 }
 
 void DeferWindowPos (HDWP & hDwp, HWND hCtrl, const RECT & r, UINT flags = 0) {
@@ -376,115 +378,21 @@ LRESULT Window::OnPositionChange (const WINDOWPOS & position) {
             }
         }
         DwmExtendFrameIntoClientArea (hWnd, &margins);
-        InvalidateRect (hWnd, NULL, TRUE);
+        //InvalidateRect (hWnd, NULL, TRUE);
     }
     return 0;
-}
-
-void Window::ShowMenuAccelerators (BOOL show) {
-    if (auto hMenuBar = GetDlgItem (this->hWnd, Window::ID::MENUBAR)) {
-        this->bMenuAccelerators = show;
-        InvalidateRect (hMenuBar, NULL, TRUE);
-    }
 }
 
 LRESULT Window::OnTimer (WPARAM id) {
     switch (id) {
         case TimerID::DarkMenuBarTracking:
-            if (auto hMenuBar = GetDlgItem (this->hWnd, ID::MENUBAR)) {
-                POINT pt;
-                if (GetCursorPos (&pt)) {
-                    MapWindowPoints (HWND_DESKTOP, hMenuBar, &pt, 1);
+            return this->OnTimerDarkMenuBarTracking (id);
 
-                    auto item = SendMessage (hMenuBar, TB_HITTEST, 0, (LPARAM) &pt);
-                    if (item >= 0) {
-                        if (this->active_menu != item) {
-                            this->next_menu = item;
-                            SendMessage (this->hWnd, WM_CANCELMODE, 0, 0);
-                        }
-                    }
-                }
-            }
+        case TimerID::UnCloak:
+            BOOL cloak = FALSE;
+            DwmSetWindowAttribute (this->hWnd, DWMWA_CLOAK, &cloak, sizeof (cloak));
+            KillTimer (this->hWnd, id);
             break;
-    }
-    return 0;
-}
-
-void Window::TrackMenu (UINT index) {
-    if (auto hMenuBar = GetDlgItem (this->hWnd, ID::MENUBAR)) {
-
-        RECT r {};
-        if (SendMessage (hMenuBar, TB_GETITEMRECT, index, (LPARAM) &r)) {
-            MapWindowPoints (this->hWnd, NULL, (POINT *) &r, 2);
-
-            if (auto hSubMenu = GetSubMenu (this->menu, index)) {
-                UINT style = 0;
-                if (GetSystemMetrics (SM_MENUDROPALIGNMENT)) {
-                    style |= TPM_RIGHTALIGN;
-                }
-
-                this->next_menu = ~0;
-                this->active_menu = index;
-                this->dark_menu_tracking = this;
-                this->hActiveMenu = hSubMenu;
-                InvalidateRect (hMenuBar, NULL, TRUE);
-
-                SetTimer (this->hWnd, TimerID::DarkMenuBarTracking, USER_TIMER_MINIMUM, NULL);
-                TrackPopupMenu (hSubMenu, style, r.left, r.bottom, 0, this->hWnd, NULL);
-                KillTimer (this->hWnd, TimerID::DarkMenuBarTracking);
-
-                this->hActiveMenu = NULL;
-                this->dark_menu_tracking = nullptr;
-                this->active_menu = ~0;
-                InvalidateRect (hMenuBar, NULL, TRUE);
-
-                if (this->next_menu != ~0) {
-                    return this->TrackMenu (this->next_menu);
-                }
-            }
-        }
-    }
-}
-
-void Window::OnTrackedMenuKey (HWND hMenuWindow, WPARAM vk) {
-    switch (vk) {
-        case VK_LEFT:
-            if (!this->bInSubMenu) {
-                if (this->active_menu != 0) {
-                    this->next_menu = this->active_menu - 1;
-                } else {
-                    this->next_menu = this->menu_size - 1;
-                }
-                SendMessage (this->hWnd, WM_CANCELMODE, 0, 0);
-            }
-            break;
-        case VK_RIGHT:
-            if (!this->bOnSubMenu) {
-                if (this->active_menu != this->menu_size - 1) {
-                    this->next_menu = this->active_menu + 1;
-                } else {
-                    this->next_menu = 0;
-                }
-                SendMessage (this->hWnd, WM_CANCELMODE, 0, 0);
-            }
-            break;
-    }
-}
-
-LRESULT Window::OnMenuSelect (HMENU menu, USHORT index, WORD flags) {
-    if (menu) {
-        this->bInSubMenu = (menu != this->hActiveMenu);
-        this->bOnSubMenu = (flags & MF_POPUP);
-    } else {
-        this->bInSubMenu = false;
-        this->bOnSubMenu = false;
-    }
-    return 0;
-}
-
-LRESULT Window::OnMenuClose (HMENU menu, USHORT flags) {
-    if (menu == this->hActiveMenu) {
-        this->ShowMenuAccelerators (false);
     }
     return 0;
 }
@@ -512,7 +420,7 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
             break;
 
         case 0x21:
-            new Window;
+            new Window (SW_SHOWDEFAULT);
             break;
 
         case 0x22:
@@ -520,7 +428,6 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
 
             // go with open
         {
-            wchar_t path [MAX_NT_PATH];
             wchar_t mask [256];
 
             int i = 0x100;
@@ -532,7 +439,7 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
             }
             mask [n] = L'\0';
 
-            path [0] = L'\0';
+            szTmpPathBuffer [0] = L'\0';
 
             OPENFILENAME ofn {};
             ofn.lStructSize = sizeof (OPENFILENAME);
@@ -541,7 +448,7 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
             ofn.lpstrFilter = mask;
             ofn.lpstrCustomFilter = NULL;
             ofn.nFilterIndex = 1;
-            ofn.lpstrFile = path; // TODO: copy current path here?
+            ofn.lpstrFile = szTmpPathBuffer; // TODO: copy current path here? TODO: do not use shared buffer, multiple Open dialogs could be open
             ofn.nMaxFile = MAX_NT_PATH;
             ofn.lpstrFileTitle = NULL;
             ofn.lpstrInitialDir = NULL;
@@ -558,12 +465,17 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
 
         case 0x5A:
         case 0x5B:
+        case 0x5F:
+        case 0x6E:
+        case 0x6F:
+            Settings::Set (id, IsMenuItemChecked (menu, id));
             EnumWindows ([] (HWND hWnd, LPARAM lParam) {
-                if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
-                    PostMessage (hWnd, Window::Message::UpdateSettings, 0, lParam);
-                }
-                return TRUE;
-            }, MAKELPARAM (id, !IsMenuItemChecked (menu, id)));
+                             if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
+                                 PostMessage (hWnd, Window::Message::UpdateSettings, 0, lParam);
+                             }
+                             return TRUE;
+                         },
+                         MAKELPARAM (id, !IsMenuItemChecked (menu, id)));
             break;
 
         case 0x12: case 0x13: case 0x14: case 0x15: case 0x16:
@@ -600,100 +512,13 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
     return 0;
 }
 
-HBRUSH Window::CreateDarkMenuBarBrush () {
-    if (this->global.dark) {
-        HBRUSH hBrush;
-        if (this->bFullscreen) {
-            if (!IsWindows11OrGreater ()) {
-                COLORREF clr;
-                if (GetForegroundWindow () == this->hWnd) {
-                    clr = RGB (GetRValue (this->global.active) / 2,
-                               GetGValue (this->global.active) / 2,
-                               GetBValue (this->global.active) / 2);
-                } else {
-                    clr = this->global.inactive;
-                }
-                hBrush = Windows::CreateSolidBrushEx (clr, 255);
-            } else {
-                hBrush = Windows::CreateSolidBrushEx (this->global.inactive, 255);
-            }
-        } else {
-            hBrush = Windows::CreateSolidBrushEx (0x000000, 128);
-        }
-        return hBrush;
-    } else
-        return NULL;
-}
-
 LRESULT Window::OnNotify (WPARAM id, NMHDR * nm) {
     switch (id) {
         case ID::MENUBAR:
-            switch (nm->code) {
-                case TBN_BEGINDRAG:
-                    this->TrackMenu (reinterpret_cast <NMTOOLBAR *> (nm)->iItem);
-                    break;
-
-                case NM_CUSTOMDRAW:
-                    auto nmtb = reinterpret_cast <NMTBCUSTOMDRAW *> (nm);
-
-                    switch (nmtb->nmcd.dwDrawStage) {
-                        case CDDS_PREPAINT:
-                            if (auto hBrush = this->CreateDarkMenuBarBrush ()) {
-                                FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, hBrush);
-                                DeleteObject (hBrush);
-                                return CDRF_NOTIFYITEMDRAW;
-                            } else
-                                return CDRF_DODEFAULT;
-
-                        case CDDS_ITEMPREPAINT:
-                            const bool active = (GetActiveWindow () == this->hWnd);
-
-                            if ((nmtb->nmcd.dwItemSpec == this->active_menu) || (nmtb->nmcd.uItemState & CDIS_HOT)) {
-                                
-                                COLORREF clr = 0;
-                                if (IsWindows11OrGreater ()) {
-                                    if (IsMenuItemChecked (menu, 0x5A) && active) {
-                                        clr = this->global.accent;
-                                    }
-                                } else {
-                                    clr = this->global.accent;
-                                }
-
-                                if (clr) {
-                                    if (auto hBrush = Windows::CreateSolidBrushEx (clr, 255)) {
-                                        FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, hBrush);
-                                        DeleteObject (hBrush);
-                                    }
-                                } else {
-                                    FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, (HBRUSH) GetStockObject (BLACK_BRUSH));
-                                }
-                            }
-
-                            COLORREF color;
-                            if (active || (nmtb->nmcd.uItemState & CDIS_HOT)) {
-                                color = this->global.text;
-                            } else {
-                                color = GetSysColor (COLOR_GRAYTEXT);
-                            }
-
-                            wchar_t text [64];
-                            auto n = GetMenuString (Window::menu, (UINT) nmtb->nmcd.dwItemSpec, text, sizeof text / sizeof text [0], MF_BYPOSITION);
-                            DWORD flags = DT_CENTER | DT_VCENTER | DT_SINGLELINE;
-                            if (!this->bMenuAccelerators) {
-                                flags |= DT_HIDEPREFIX;
-                            }
-
-                            SetBkMode (nmtb->nmcd.hdc, TRANSPARENT);
-                            Windows::DrawTextComposited (nm->hwndFrom, nmtb->nmcd.hdc, text, n, flags, color, &nmtb->nmcd.rc);
-
-                            return TBCDRF_NOOFFSET | CDRF_SKIPDEFAULT;
-                    }
-            }
-            break;
+            return this->OnNotifyMenuBar (id, nm);
 
         case ID::STATUSBAR:
-            std::printf ("WM_NOTIFY ID::STATUSBAR %llu\n", id);
-            break;
+            return this->OnNotifyStatusBar (id, nm);
     }
     return 0;
 }
@@ -708,48 +533,23 @@ LRESULT Window::OnDrawItem (WPARAM id, const DRAWITEMSTRUCT * draw) {
             return TRUE;
 
         case ID::MENUNOTE:
-            if (auto hBrush = this->CreateDarkMenuBarBrush ()) {
-                FillRect (draw->hDC, &draw->rcItem, hBrush);
-                DeleteObject (hBrush);
-
-                COLORREF color;
-                if (GetActiveWindow () == this->hWnd) {
-                    color = this->global.text;
-                } else {
-                    color = GetSysColor (COLOR_GRAYTEXT);
-                }
-
-                SetBkMode (draw->hDC, TRANSPARENT);
-                Windows::DrawTextComposited (draw->hwndItem, draw->hDC, L"F11 ", 4, DT_VCENTER | DT_RIGHT | DT_SINGLELINE | DT_NOPREFIX, color, &draw->rcItem);
-                return TRUE;
-            } else
-                return FALSE;
+            return this->OnDrawMenuNote (id, draw);
 
         case ID::STATUSBAR:
-            COLORREF color;
-            if (GetActiveWindow () == this->hWnd) {
-                color = this->global.text;
-            } else {
-                color = GetSysColor (COLOR_GRAYTEXT);
-            }
-
-            RECT r = draw->rcItem;
-            r.top += 1;
-            r.left += this->metrics [SM_CXPADDEDBORDER];
-            r.right -= this->metrics [SM_CXFIXEDFRAME];
-            if (SendMessage (draw->hwndItem, SB_GETICON, draw->itemID, 0)) {
-                r.left += this->metrics [SM_CXSMICON];
-            }
-            SetBkMode (draw->hDC, TRANSPARENT);
-            Windows::DrawTextComposited (draw->hwndItem, draw->hDC, (LPWSTR) draw->itemData, -1, DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX, color, &r);
-            return TRUE;
+            return this->OnDrawStatusBar (id, draw);
     }
     return FALSE;
 }
 
 LRESULT Window::OnEraseBackground (HDC hDC) {
-    //SetDCBrushColor (hDC, 0);
-    return NULL; // (LRESULT) GetStockObject (DC_BRUSH);
+    RECT r;
+    GetClientRect (this->hWnd, &r);
+
+    // printf ("OnEraseBackground %p: %p\n", this->hWnd, WindowFromDC (hDC));
+
+    SetDCBrushColor (hDC, 0x000000);
+    FillRect (hDC, &r, (HBRUSH) GetStockObject (DC_BRUSH));
+    return TRUE;
 }
 
 LRESULT Window::OnUserMessage (UINT message, WPARAM, LPARAM lParam) {
@@ -774,6 +574,11 @@ LRESULT Window::OnUserMessage (UINT message, WPARAM, LPARAM lParam) {
                     DWM_WINDOW_CORNER_PREFERENCE corners = set ? DWMWCP_DONOTROUND : DWMWCP_DEFAULT;
                     DwmSetWindowAttribute (hWnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corners, sizeof corners);
                 } break;
+
+                case 0x6F: // TODO: refresh to show/hide status bar
+                    break;
+                
+                // TODO: on others refresh editor
             }
             CheckMenuItem (menu, id, set ? MF_CHECKED : 0);
             break;
@@ -782,37 +587,26 @@ LRESULT Window::OnUserMessage (UINT message, WPARAM, LPARAM lParam) {
 }
 
 LRESULT Window::OnCopyData (HWND hSender, ULONG_PTR code, const void * data, std::size_t size) {
-    std::printf ("OnCopyData from %p: %llu, size: %llu\n", hSender, code, size);
-
     switch (code) {
-        case CopyCode::OpenFileCheck:
-            // TODO: if single instance mode, open new Window
+        case CopyCode::OpenFile:
+            if (size >= sizeof (OpenFileRequest)) {
+                auto request = static_cast <const Window::OpenFileRequest *> (data);
+                try {
+                    if (request->handle) {
+                        return (LRESULT) (new Window (request->nCmdShow, File ((HANDLE) (std::intptr_t) request->handle)))->hWnd;
+                    } else {
+                        return (LRESULT) (new Window (request->nCmdShow))->hWnd;
+                    }
+                } catch (...) {
+                }
+            }
+            return FALSE;
 
-            return (size == sizeof (FILE_ID_INFO))
-                && this->IsFileOpen ((const FILE_ID_INFO *) data);
+        case CopyCode::OpenFileCheck:
+            return (size >= sizeof (FILE_ID_INFO))
+                && this->File::IsOpen ((const FILE_ID_INFO *) data);
     }
     return 0;
-}
-
-void Window::RecreateMenuButtons (HWND hMenuBar) {
-    while (SendMessage (hMenuBar, TB_DELETEBUTTON, 0, 0))
-        ;
-
-    wchar_t text [64];
-    TBBUTTON button {};
-    button.fsState = TBSTATE_ENABLED;
-    button.fsStyle = BTNS_SHOWTEXT | BTNS_AUTOSIZE;
-    button.iString = (INT_PTR) text;
-
-    this->menu_size = 0;
-    while (GetMenuString (Window::menu, this->menu_size, text, sizeof text / sizeof text [0], MF_BYPOSITION)) {
-        button.idCommand = this->menu_size;
-        if (SendMessage (hMenuBar, TB_ADDBUTTONS, 1, (LPARAM) &button)) {
-            ++this->menu_size;
-        }
-    }
-
-    SendMessage (hMenuBar, TB_AUTOSIZE, 0, 0);
 }
 
 LRESULT Window::OnDpiChange (RECT *, LONG) {
@@ -823,10 +617,6 @@ LRESULT Window::OnDpiChange (RECT *, LONG) {
 
         SendDlgItemMessage (hWnd, ID::MENUNOTE, WM_SETFONT, SendMessage (hMenuBar, WM_GETFONT, 0, 0), 1);
     }
-
-    wchar_t aaa [64];
-    std::swprintf (aaa, 64, L"DPI %u/%u, SCALE %u", this->dpi, dpiNULL, scale.GetCurrentScale ());
-    SetDlgItemText (this->hWnd, ID::EDITOR, aaa);
     return 0;
 }
 
@@ -845,7 +635,6 @@ BOOL WINAPI UpdateWindowTreeTheme (HWND hCtrl, LPARAM param) {
 
 LRESULT Window::OnVisualEnvironmentChange () {
     EnumChildWindows (this->hWnd, UpdateWindowTreeTheme, (LPARAM) this->global.dark);
-
     SetMenu (this->hWnd, this->global.dark ? NULL : this->menu);
     return FALSE;
 }
