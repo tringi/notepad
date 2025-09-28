@@ -119,7 +119,7 @@ private:
     void RecreateMenuButtons (HWND hMenuBar);
     void UpdateFileName ();
     LONG UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE size);
-    HBRUSH CreateDarkMenuBarBrush ();
+    HBRUSH CreateDarkMenuBarBrush (bool hot);
 
     LRESULT OnDrawStatusBar (WPARAM id, const DRAWITEMSTRUCT * draw);
     LRESULT OnDrawMenuNote (WPARAM id, const DRAWITEMSTRUCT * draw);

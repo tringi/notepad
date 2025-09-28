@@ -119,27 +119,45 @@ LRESULT Window::OnMenuClose (HMENU menu, USHORT flags) {
     return 0;
 }
 
-HBRUSH Window::CreateDarkMenuBarBrush () {
+HBRUSH Window::CreateDarkMenuBarBrush (bool hot) {
     if (this->global.dark) {
-        HBRUSH hBrush;
-        if (this->bFullscreen) {
-            if (!IsWindows11OrGreater ()) {
-                COLORREF clr;
-                if (GetForegroundWindow () == this->hWnd) {
-                    clr = RGB (GetRValue (this->global.active) / 2,
-                               GetGValue (this->global.active) / 2,
-                               GetBValue (this->global.active) / 2);
-                } else {
-                    clr = this->global.inactive;
+        if (hot) {
+            COLORREF clr = 0;
+            if (IsWindows11OrGreater ()) {
+                if (IsMenuItemChecked (menu, 0x5A) && (GetActiveWindow () == this->hWnd)) {
+                    clr = this->global.accent;
                 }
-                hBrush = Windows::CreateSolidBrushEx (clr, 255);
             } else {
-                hBrush = Windows::CreateSolidBrushEx (this->global.inactive, 255);
+                clr = this->global.accent;
             }
+
+            if (clr) {
+                return Windows::CreateSolidBrushEx (clr, 255);
+            } else {
+                return CreateSolidBrush (0x000000);
+            }
+
         } else {
-            hBrush = Windows::CreateSolidBrushEx (0x000000, 128);
+            HBRUSH hBrush;
+            if (this->bFullscreen) {
+                if (!IsWindows11OrGreater ()) {
+                    COLORREF clr;
+                    if (GetForegroundWindow () == this->hWnd) {
+                        clr = RGB (GetRValue (this->global.active) / 2,
+                                   GetGValue (this->global.active) / 2,
+                                   GetBValue (this->global.active) / 2);
+                    } else {
+                        clr = this->global.inactive;
+                    }
+                    hBrush = Windows::CreateSolidBrushEx (clr, 255);
+                } else {
+                    hBrush = Windows::CreateSolidBrushEx (this->global.inactive, 255);
+                }
+            } else {
+                hBrush = Windows::CreateSolidBrushEx (0x000000, 128);
+            }
+            return hBrush;
         }
-        return hBrush;
     } else
         return NULL;
 }
@@ -155,7 +173,7 @@ LRESULT Window::OnNotifyMenuBar (WPARAM id, NMHDR * nm) {
 
             switch (nmtb->nmcd.dwDrawStage) {
                 case CDDS_PREPAINT:
-                    if (auto hBrush = this->CreateDarkMenuBarBrush ()) {
+                    if (auto hBrush = this->CreateDarkMenuBarBrush (false)) {
                         FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, hBrush);
                         DeleteObject (hBrush);
                         return CDRF_NOTIFYITEMDRAW;
@@ -166,23 +184,9 @@ LRESULT Window::OnNotifyMenuBar (WPARAM id, NMHDR * nm) {
                     const bool active = (GetActiveWindow () == this->hWnd);
 
                     if ((nmtb->nmcd.dwItemSpec == this->active_menu) || (nmtb->nmcd.uItemState & CDIS_HOT)) {
-
-                        COLORREF clr = 0;
-                        if (IsWindows11OrGreater ()) {
-                            if (IsMenuItemChecked (menu, 0x5A) && active) {
-                                clr = this->global.accent;
-                            }
-                        } else {
-                            clr = this->global.accent;
-                        }
-
-                        if (clr) {
-                            if (auto hBrush = Windows::CreateSolidBrushEx (clr, 255)) {
-                                FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, hBrush);
-                                DeleteObject (hBrush);
-                            }
-                        } else {
-                            FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, (HBRUSH) GetStockObject (BLACK_BRUSH));
+                        if (auto hBrush = this->CreateDarkMenuBarBrush (true)) {
+                            FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, hBrush);
+                            DeleteObject (hBrush);
                         }
                     }
 
@@ -211,7 +215,7 @@ LRESULT Window::OnNotifyMenuBar (WPARAM id, NMHDR * nm) {
 }
 
 LRESULT Window::OnDrawMenuNote (WPARAM id, const DRAWITEMSTRUCT * draw) {
-    if (auto hBrush = this->CreateDarkMenuBarBrush ()) {
+    if (auto hBrush = this->CreateDarkMenuBarBrush (false)) {
         FillRect (draw->hDC, &draw->rcItem, hBrush);
         DeleteObject (hBrush);
 
