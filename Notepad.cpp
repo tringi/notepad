@@ -20,7 +20,7 @@
 #include <vector>
 #include <set>
 
-const wchar_t * szVersionInfo [9] = {};
+const wchar_t * szVersionInfo [8] = {};
 wchar_t szTmpPathBuffer [MAX_NT_PATH];
 Windows::TextScale scale;
 HHOOK hHook = NULL;
@@ -31,7 +31,7 @@ ATOM InitializeGUI (HINSTANCE);
 bool InitVersionInfoStrings (HINSTANCE);
 DWORD WINAPI ApplicationRecoveryCallback (PVOID);
 
-std::uint8_t ForwardProperShowStyle (unsigned int nCmdShow) {
+std::uint8_t ForwardProperShowStyle (std::uintptr_t nCmdShow) {
     if (nCmdShow == SW_SHOWDEFAULT) {
         STARTUPINFO si {};
         si.cb = sizeof si;
@@ -45,7 +45,7 @@ std::uint8_t ForwardProperShowStyle (unsigned int nCmdShow) {
     if (nCmdShow > SW_MAX) {
         nCmdShow = SW_SHOWNORMAL;
     }
-    return nCmdShow;
+    return (std::uint8_t) nCmdShow;
 }
 
 bool AskInstancesForOpenFile (File * file, std::map <DWORD, HWND> * instances) {
@@ -122,11 +122,7 @@ bool AskInstanceToOpenFile (DWORD pid, HWND hWnd, HANDLE hFile, int nCmdShow) {
             // on failure, cleanup the handle we copied into the other process, to not lock the file
 
             CloseHandleEx (hPeer, hPeerFile);
-        } else {
-            // printf (" DuplicateHandle error %lu\n", GetLastError ());
         }
-    } else {
-        // printf (" OpenProcess error %lu\n", GetLastError ());
     }
     return false;
 }
@@ -161,16 +157,6 @@ bool AskInstancesToOpenWindow (int nCmdShow) {
 }
 
 int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
-    // Windows::SetThreadName (L"GUI");
-
-    if (AttachConsole (ATTACH_PARENT_PROCESS)) {
-        BindCrtHandlesToStdHandles (true, true, true);
-    } else
-    if (IsDebuggerPresent ()) {
-        AllocConsole ();
-        BindCrtHandlesToStdHandles (true, true, true);
-    }
-
     SetLastError (0);
     if (Window::InitAtom (hInstance)) {
 
@@ -396,8 +382,9 @@ bool InitVersionInfoStrings (HINSTANCE hInstance) {
                 // StringFileInfo
                 //  - not searching, leap of faith that the layout is stable
 
-                auto pstrings = static_cast <const unsigned char *> (data) + 76
-                                + reinterpret_cast <const Header *> (data)->wValueLength;
+                auto pdata = static_cast <const unsigned char *> (data) + 76;
+                auto h = *reinterpret_cast <const Header *> (data);
+                auto pstrings = pdata + h.wValueLength;
                 auto p = reinterpret_cast <const wchar_t *> (pstrings) + 12;
                 auto e = p + reinterpret_cast <const Header *> (pstrings)->wLength / 2 - 12;
                 auto i = 0u;
@@ -424,7 +411,7 @@ bool InitVersionInfoStrings (HINSTANCE hInstance) {
             }
         }
     }
-    return true;
+    return false;
 }
 
 ATOM InitializeGUI (HINSTANCE hInstance) {
