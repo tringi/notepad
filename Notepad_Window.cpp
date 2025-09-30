@@ -145,10 +145,10 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
     // unfortunatelly we lose the window opening animation
 
     if (auto option = Settings::Get (L"Start Cloaked", 1)) {
-        if (this->global.dark || (option > 1)) {
+        if (this->global.dark || (option > 1)) { // 0 - don't cloak, 1 - cloak in dark mode, 2 - always cloak
             BOOL cloak = TRUE;
-            DwmSetWindowAttribute (this->hWnd, DWMWA_CLOAK, &cloak, sizeof (cloak));
-            SetTimer (this->hWnd, TimerID::UnCloak, 10, NULL);
+            DwmSetWindowAttribute (this->hWnd, DWMWA_CLOAK, &cloak, sizeof cloak);
+            SetTimer (this->hWnd, TimerID::UnCloak, USER_TIMER_MINIMUM, NULL);
         }
     }
 
@@ -233,7 +233,7 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
 }
 
 void Window::UpdateFileName () {
-    extern const wchar_t * szVersionInfo [9];
+    extern const wchar_t * szVersionInfo [8];
 
     if (this->handle != INVALID_HANDLE_VALUE) {
         if (GetFinalPathNameByHandle (this->handle, szTmpPathBuffer, MAX_NT_PATH, 0)) {
@@ -390,7 +390,7 @@ LRESULT Window::OnTimer (WPARAM id) {
 
         case TimerID::UnCloak:
             BOOL cloak = FALSE;
-            DwmSetWindowAttribute (this->hWnd, DWMWA_CLOAK, &cloak, sizeof (cloak));
+            DwmSetWindowAttribute (this->hWnd, DWMWA_CLOAK, &cloak, sizeof cloak);
             KillTimer (this->hWnd, id);
             break;
     }
@@ -489,9 +489,9 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
         case 0xFB: // F11
             this->bFullscreen = !this->bFullscreen;
             if (this->bFullscreen) {
-                if (IsZoomed (this->hWnd))
+                if (IsZoomed (this->hWnd)) {
                     ShowWindow (this->hWnd, SW_RESTORE);
-
+                }
                 GetWindowRect (this->hWnd, &this->rBeforeFullscreen);
                 SetWindowLong (this->hWnd, GWL_STYLE, WS_POPUP);
 
@@ -501,12 +501,10 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
             } else {
                 SetWindowLong (this->hWnd, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN);
                 ShowWindow (this->hWnd, SW_RESTORE);
-
                 MoveWindow (this->hWnd, rBeforeFullscreen.left, rBeforeFullscreen.top,
                             rBeforeFullscreen.right - rBeforeFullscreen.left,
                             rBeforeFullscreen.bottom - rBeforeFullscreen.top, TRUE);
             };
-
             break;
     }
     return 0;
