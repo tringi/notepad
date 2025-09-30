@@ -12,6 +12,8 @@ namespace Settings {
     
     BOOL  Set (unsigned int, DWORD);
     BOOL  Set (const wchar_t *, DWORD);
+
+    void  ReportError (const wchar_t *, ...);
 }
 
 #endif

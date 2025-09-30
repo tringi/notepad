@@ -1,4 +1,5 @@
 #include "Notepad_Settings.hpp"
+#include <cwchar>
 
 namespace {
     HKEY hKeySettings = NULL;
@@ -17,7 +18,7 @@ namespace {
     }
 }
 
-extern const wchar_t * szVersionInfo [9];
+extern const wchar_t * szVersionInfo [8];
 
 BOOL Settings::Init () {
     BOOL result = FALSE;
@@ -45,6 +46,9 @@ BOOL Settings::Init () {
                     // Instance/PID
                     //  - volatile for reporting errors etc.
 
+                    wchar_t szPID [12];
+                    std::swprintf (szPID, 12, L"%u", GetCurrentProcessId ());
+                    RegCreateKeyEx (hKeySettings, szPID, 0, NULL, REG_OPTION_VOLATILE, KEY_ALL_ACCESS, NULL, &hKeyInstance, NULL);
                 }
                 RegCloseKey (hKeyTRIMCORE);
             }
@@ -78,4 +82,18 @@ BOOL Settings::Set (const wchar_t * item, DWORD value) {
             == ERROR_SUCCESS;
     } else
         return FALSE;
+}
+
+void Settings::ReportError (const wchar_t * format, ...) {
+    wchar_t buffer [1536];
+    std::swprintf (buffer, 1536, L"%08X: ", GetLastError ());
+
+    va_list args;
+    va_start (args, format);
+    std::vswprintf (buffer + 10, 1526, format, args);
+    va_end (args);
+
+    RegSetValueEx (hKeyInstance, L"Last Error", 0, REG_SZ,
+                   reinterpret_cast <const BYTE *> (buffer),
+                   (DWORD) sizeof (wchar_t) * (std::wcslen (buffer) + 1));
 }
