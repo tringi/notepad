@@ -228,17 +228,8 @@ LRESULT Windows::Window::Dispatch (UINT message, WPARAM wParam, LPARAM lParam) {
             } else
                 return false;
                                         
-        /*case WM_DROPFILES:
-            if (auto n = DragQueryFile ((HDROP) wParam, 0xFFFFFFFF, NULL, 0)) {
-                for (auto i = 0u; i != n; ++i) {
-                    TCHAR szFileName [256];
-                    if (DragQueryFile ((HDROP) wParam, i, szFileName, 256)) {
-                        MessageBox (hWnd, szFileName, szFileName, 0);
-                    }
-                }
-            }
-            DragFinish ((HDROP) wParam);
-            break;// */
+        case WM_DROPFILES:
+            return this->OnDropFiles ((HDROP) wParam);
 
         case WM_THEMECHANGED:
         case WM_SETTINGCHANGE:
@@ -341,11 +332,11 @@ LRESULT Windows::Window::OnMenuSelect (HMENU, USHORT index, WORD flags) { return
 LRESULT Windows::Window::OnMenuNext (WPARAM vk, MDINEXTMENU * next) { return 0; }
 LRESULT Windows::Window::OnMenuClose (HMENU, USHORT mf) { return 0; }
 LRESULT Windows::Window::OnEnterIdle (WPARAM msgf, HWND hOwner) { return 0; }
+LRESULT Windows::Window::OnDropFiles (HDROP hDrop) { DragFinish (hDrop);  return 0; }
 
 LRESULT Windows::Window::OnRegisteredMessage (UINT, WPARAM, LPARAM) { return 0; }
 LRESULT Windows::Window::OnUserMessage (UINT, WPARAM, LPARAM) { return 0; }
 LRESULT Windows::Window::OnAppMessage (UINT, WPARAM, LPARAM) { return 0; }
-
 
 LRESULT Windows::Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
     NMHDR nm = { hChild, id, notification };

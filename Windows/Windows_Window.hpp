@@ -2,6 +2,7 @@
 #define WINDOWS_WINDOW_HPP
 
 #include <Windows.h>
+#include <shellapi.h>
 #include "Windows_WindowPresentation.hpp"
 
 namespace Windows {
@@ -60,6 +61,7 @@ namespace Windows {
         virtual LRESULT OnCtlColor (HDC, HWND hCtrl);
         virtual LRESULT OnEraseBackground (HDC);
         virtual LRESULT OnVisualEnvironmentChange ();
+        virtual LRESULT OnDropFiles (HDROP);
 
         virtual LRESULT OnRegisteredMessage (UINT, WPARAM, LPARAM);
         virtual LRESULT OnUserMessage (UINT, WPARAM, LPARAM);
