@@ -4,6 +4,10 @@
 #include <Windows.h>
 
 namespace Settings {
+    namespace Defaults {
+        constexpr DWORD SingleInstance = 1;
+        constexpr DWORD StartCloaked = 1;
+    };
     
     BOOL  Init ();
     
