@@ -95,5 +95,5 @@ void Settings::ReportError (const wchar_t * format, ...) {
 
     RegSetValueEx (hKeyInstance, L"Last Error", 0, REG_SZ,
                    reinterpret_cast <const BYTE *> (buffer),
-                   (DWORD) sizeof (wchar_t) * (std::wcslen (buffer) + 1));
+                   (DWORD) (sizeof (wchar_t) * (std::wcslen (buffer) + 1)));
 }
