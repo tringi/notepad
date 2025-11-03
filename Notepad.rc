@@ -4,11 +4,12 @@
 
 1 ACCELERATORS
 {
-    "N", 0x20, CONTROL, VIRTKEY // Ctrl+N, New
-    "N", 0x21, CONTROL, SHIFT, VIRTKEY // Ctrl+Shift+N, New Window
-    "O", 0x22, CONTROL, VIRTKEY // Ctrl+O, Open
-    "S", 0x24, CONTROL, VIRTKEY // Ctrl+S, Save
-    "S", 0x25, CONTROL, SHIFT, VIRTKEY // Ctrl+Shift+S, Save As
+    "N", 0x20, CONTROL, VIRTKEY         // Ctrl+N, New
+    "N", 0x21, CONTROL, SHIFT, VIRTKEY  // Ctrl+Shift+N, New Window
+    "O", 0x22, CONTROL, VIRTKEY         // Ctrl+O, Open
+    "O", 0x23, CONTROL, SHIFT, VIRTKEY  // Ctrl+Shift+O, Open in New Window
+    "S", 0x24, CONTROL, VIRTKEY         // Ctrl+S, Save
+    "S", 0x25, CONTROL, SHIFT, VIRTKEY  // Ctrl+Shift+S, Save As
 
     // "^C", 0xCC // Ctrl+C
     VK_F4, 0xCF, VIRTKEY, ALT, CONTROL // Ctrl+Alt+F4 - quit whole process
