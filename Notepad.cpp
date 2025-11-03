@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <objbase.h>
 #include <ShellAPI.h>
+#include <Shobjidl.h>
 #include <CommCtrl.h>
 #include <Uxtheme.h>
 #include <DwmAPI.h>
@@ -24,8 +25,7 @@ const wchar_t * szVersionInfo [8] = {};
 wchar_t szTmpPathBuffer [MAX_NT_PATH];
 Windows::TextScale scale;
 HHOOK hHook = NULL;
-
-constexpr DWORD SingleInstanceDefault = 1;
+ITaskbarList3 * taskbar = nullptr;
 
 ATOM InitializeGUI (HINSTANCE);
 bool InitVersionInfoStrings (HINSTANCE);
@@ -199,14 +199,12 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
         File file;
 
         if (lpCmdLine [0]) {
-            // TODO: support passing file id like: <volume:id-bytes> for OpenFileById
-
-            std::map <DWORD, HWND> instances;
-
             if (file.init (lpCmdLine)) {
 
                 // ask other instances/windows if they have this file open
                 // if one answers yes: activates the window and return true
+
+                std::map <DWORD, HWND> instances;
 
                 if (AskInstancesForOpenFile (&file, &instances))
                     return ERROR_SUCCESS;
@@ -217,7 +215,7 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
                     if (InitVersionInfoStrings (hInstance)) {
 
                         Settings::Init ();
-                        if (Settings::Get (L"Single Instance", SingleInstanceDefault)) {
+                        if (Settings::Get (L"Single Instance", Settings::Defaults::SingleInstance)) {
 
                             for (auto [pid, hWnd] : instances) {
                                 if (AskInstanceToOpenFile (pid, hWnd, file.handle, nCmdShow))
@@ -227,9 +225,22 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
                     }
                 }
             } else {
-                
-                // file name does not exist, what now?
-                printf ("file name does not exist\n");
+                switch (auto error = GetLastError ()) {
+                    case ERROR_FILE_NOT_FOUND:
+                        // does not exists, create?
+                        break;
+
+                    case ERROR_SHARING_VIOLATION:
+                        // some other app has the file already open exclusively
+                        break;
+
+                    case ERROR_ACCESS_DENIED:
+                        // not enought access rights? or the file is pending to be deleted
+                        break;
+
+                    default:
+                        ; // messagebox
+                }
             }
         }
 
@@ -240,7 +251,7 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
         if (InitVersionInfoStrings (hInstance)) {
 
             Settings::Init ();
-            if (Settings::Get (L"Single Instance", SingleInstanceDefault)) {
+            if (Settings::Get (L"Single Instance", Settings::Defaults::SingleInstance)) {
 
                 if (AskInstancesToOpenWindow (nCmdShow))
                     return ERROR_SUCCESS;
@@ -248,6 +259,13 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
 
             if (InitializeGUI (hInstance)
                     && scale.initialize ()) {
+
+                if (SUCCEEDED (CoCreateInstance (CLSID_TaskbarList, NULL, CLSCTX_ALL, IID_ITaskbarList3, (void **) &taskbar))) {
+                    if (!SUCCEEDED (taskbar->HrInit ())) {
+                        taskbar->Release ();
+                        taskbar = nullptr;
+                    }
+                }
 
                 RegisterApplicationRestart (L"?", 0);
                 //RegisterApplicationRecoveryCallback (
@@ -262,7 +280,7 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
                                                   switch (cwp->message) {
                                                       case WM_KEYDOWN:
                                                           if (Window::dark_menu_tracking != nullptr) {
-                                                              if (GetClassWord (cwp->hwnd, GCW_ATOM) == 32768) { // menu window class
+                                                              if (GetClassWord (cwp->hwnd, GCW_ATOM) == 32768) { // menu window class ID
                                                                   Window::dark_menu_tracking->OnTrackedMenuKey (cwp->hwnd, cwp->wParam);
                                                               }
                                                           }
@@ -353,6 +371,7 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
 
                 } while (message.message != WM_QUIT);
 
+                taskbar->Release ();
                 scale.terminate ();
 
                 CoUninitialize ();
@@ -433,6 +452,7 @@ ATOM InitializeGUI (HINSTANCE hInstance) {
     }//*/
 
     Windows::WindowPresentation::Initialize ();
+    //RegisterWindowMessage (L"TaskbarCreated");
     return Window::Initialize (hInstance);
 }
 
