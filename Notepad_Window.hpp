@@ -27,12 +27,14 @@ private:
     RECT rBeforeFullscreen {};
     bool bFullscreen = false;
 
-    std::uint8_t menu_size = 0;
-    std::uint8_t active_menu = ~0;
-    std::uint8_t next_menu = ~0;
+    bool bActive = false;
     bool bInSubMenu = false;
     bool bOnSubMenu = false;
     bool bMenuAccelerators = false;
+    std::uint8_t menu_size = 0;
+    std::uint8_t active_menu = ~0;
+    std::uint8_t next_menu = ~0;
+
     HMENU hActiveMenu = NULL;
 
 public:
@@ -59,7 +61,7 @@ public:
     };
     struct CopyCode {
         enum : ULONG_PTR {
-            OpenFile      = 1, // data = full path
+            OpenFile      = 1, // data = OpenFileRequest
             OpenFileCheck = 2, // data = FILE_ID_INFO
         };
     };
@@ -77,7 +79,7 @@ public:
     struct StatusBarCell {
         enum : UCHAR {
             FileName = 0,
-            CursorPosition = 1,
+            CursorPos = 1,
             Reserved = 2,
             FileSize = 3,
             ZoomLevel = 4,
@@ -112,17 +114,21 @@ private:
     virtual LRESULT OnVisualEnvironmentChange () override;
     virtual LRESULT OnUserMessage (UINT, WPARAM, LPARAM) override;
     virtual LRESULT OnCopyData (HWND, ULONG_PTR, const void *, std::size_t) override;
+    virtual LRESULT OnDropFiles (HDROP) override;
 
+    bool ToggleTopmost (int topmost = -1);
+    bool CloakIfRequired ();
     void CommonConstructor (int show);
     void TrackMenu (UINT index);
     void ShowMenuAccelerators (BOOL show);
     void RecreateMenuButtons (HWND hMenuBar);
     void UpdateFileName ();
+    void OpenFile ();
+    void OpenFiles ();
     LONG UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE size);
     HBRUSH CreateDarkMenuBarBrush (bool hot);
 
     LRESULT OnDrawStatusBar (WPARAM id, const DRAWITEMSTRUCT * draw);
-    LRESULT OnDrawMenuNote (WPARAM id, const DRAWITEMSTRUCT * draw);
     LRESULT OnNotifyStatusBar (WPARAM id, NMHDR *);
     LRESULT OnNotifyMenuBar (WPARAM id, NMHDR *);
     LRESULT OnTimerDarkMenuBarTracking (WPARAM id);

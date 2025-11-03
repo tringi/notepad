@@ -19,13 +19,13 @@ LRESULT CALLBACK StatusBarTooltipSubclassProcedure (HWND hWnd, UINT message, WPA
                         nmTT->lpszText = NULL;
 
                         if (window->handle != INVALID_HANDLE_VALUE) {
-                            if (GetFinalPathNameByHandle (window->handle, szTmpPathBuffer, MAX_NT_PATH, 0)) {
+                            if (GetFinalPathNameByHandle (window->handle, szTmpPathBuffer, MAX_NT_PATH, VOLUME_NAME_DOS)) {
                                 nmTT->lpszText = szTmpPathBuffer;
                             }
                         }
                         return 0;
 
-                    case Window::StatusBarCell::CursorPosition: nmTT->lpszText = (LPWSTR) L"Current line and column"; return 0;
+                    case Window::StatusBarCell::CursorPos:nmTT->lpszText = (LPWSTR) L"Current line and column"; return 0;
                     case Window::StatusBarCell::FileSize: nmTT->lpszText = (LPWSTR) L"Disk: 160 kB, Memory: 500 kB, 10 kB of unsaved edits, 200 kB in undo steps"; return 0;
                     case Window::StatusBarCell::ZoomLevel:nmTT->lpszText = (LPWSTR) L"Ctrl+Wheel"; return 0;
                     case Window::StatusBarCell::LineEnds: nmTT->lpszText = (LPWSTR) L"Windows mode, click to change"; return 0;
@@ -83,18 +83,18 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
 
     this->UpdateFileName ();
 
-    SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::CursorPosition | SBT_OWNERDRAW, (LPARAM) L"5\x2236""16"); // TODO: click to Go To
+    SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::CursorPos| SBT_OWNERDRAW, (LPARAM) L"5\x2236""16"); // TODO: click to Go To
     SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::FileSize | SBT_OWNERDRAW, (LPARAM) L"240\x200AkB");
     SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::ZoomLevel| SBT_OWNERDRAW, (LPARAM) L"100\x200A%"); // TODO: click to Zoom
     SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::LineEnds | SBT_OWNERDRAW, (LPARAM) L"CR LF"); // TODO: click to change
-    SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::Encoding | SBT_OWNERDRAW, (LPARAM) L"Windows 1250"); // UTF-16 LE, click to change
+    SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::Encoding | SBT_OWNERDRAW, 0); // UTF-16 LE, click to change
 
     return status.cy;
 }
 
 LRESULT Window::OnDrawStatusBar (WPARAM id, const DRAWITEMSTRUCT * draw) {
     COLORREF color;
-    if (GetActiveWindow () == this->hWnd) {
+    if (this->bActive) {
         color = this->global.text;
     } else {
         color = GetSysColor (COLOR_GRAYTEXT);
@@ -108,7 +108,32 @@ LRESULT Window::OnDrawStatusBar (WPARAM id, const DRAWITEMSTRUCT * draw) {
         r.left += this->metrics [SM_CXSMICON];
     }
     SetBkMode (draw->hDC, TRANSPARENT);
-    Windows::DrawTextComposited (draw->hwndItem, draw->hDC, (LPWSTR) draw->itemData, -1, DT_VCENTER | DT_SINGLELINE | DT_PATH_ELLIPSIS | DT_NOPREFIX, color, &r);
+
+    LPCWSTR string = NULL;
+    switch (draw->itemID) {
+        case StatusBarCell::FileName:
+            string = this->File::GetCurrentFileName (szTmpPathBuffer, MAX_NT_PATH);
+            break;
+        case StatusBarCell::CursorPos:
+            
+            break;
+        case StatusBarCell::ZoomLevel:
+            
+            break;
+        case StatusBarCell::LineEnds:
+            
+            break;
+        case StatusBarCell::Encoding:
+            string = L"Windows 1250";
+            break;
+    }
+
+    if (draw->itemData >= 0x10000) {
+        string = (LPCWSTR) draw->itemData;
+    }
+    if (string) {
+        Windows::DrawTextComposited (draw->hwndItem, draw->hDC, string, -1, DT_VCENTER | DT_SINGLELINE | DT_PATH_ELLIPSIS | DT_NOPREFIX, color, &r);
+    }
     return TRUE;
 }
 
@@ -133,7 +158,7 @@ LRESULT Window::OnNotifyStatusBar (WPARAM id, NMHDR * nm) {
                             break;
                     }
                     break;
-                case StatusBarCell::CursorPosition:
+                case StatusBarCell::CursorPos:
                     switch (nm->code) {
                         case NM_CLICK:
                             // Go To Line dialog
@@ -168,9 +193,6 @@ LRESULT Window::OnNotifyStatusBar (WPARAM id, NMHDR * nm) {
                     }
                     break;
             }
-
-            std::printf ("WM_NOTIFY ID::STATUSBAR %d -> %llu / %llu // hit %u\n",
-                         nm->code, nmMouse->dwItemSpec, nmMouse->dwItemData, nmMouse->dwHitInfo);
             break;
     }
     return FALSE;

@@ -8,8 +8,10 @@
 #include "Windows\Windows_GetCurrentModuleHandle.hpp"
 
 #include <commdlg.h>
+#include <Shobjidl.h>
 
 extern Windows::TextScale scale;
+extern ITaskbarList3 * taskbar;
 extern wchar_t szTmpPathBuffer [MAX_NT_PATH];
 
 LRESULT CALLBACK StatusBarTooltipSubclassProcedure (HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
@@ -81,6 +83,8 @@ namespace {
         return DefSubclassProc (hWnd, message, wParam, lParam);
     }
 
+    wchar_t szFilters [256];
+
     ATOM atomCOMBOBOX = 0;
 }
 
@@ -95,6 +99,17 @@ ATOM Window::Initialize (HINSTANCE hInstance) {
     Window::rsrc = LoadResourcesModule ();
     Window::menu = LoadMenu (hInstance, MAKEINTRESOURCE (1));
     Window::wndmenu = LoadMenu (hInstance, MAKEINTRESOURCE (2));
+
+    {
+        int i = 0x100;
+        int m = 0;
+        int n = 0;
+        while (m = LoadString (hInstance, i, &szFilters [n], sizeof szFilters / sizeof szFilters [0] - n - 1)) {
+            n += m + 1;
+            i++;
+        }
+        szFilters [n] = L'\0';
+    }
 
     if (IsWindows11OrGreater ()) {
         if (Settings::Get (0x5A, 0)) {
@@ -130,27 +145,34 @@ Window::Window (int show, File && file)
 void Window::CommonConstructor (int show) {
     this->icons.aux.try_emplace (1);
 
-    DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
-    DWORD extra = 0; // WS_EX_COMPOSITED; // prevents flashbang on start, but makes everything flash on repaint
+    DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+    DWORD extra = WS_EX_APPWINDOW | WS_EX_ACCEPTFILES;
 
     // TODO: last position?
 
     ShowWindow (this->Create (this->instance, this->atom, style, extra), show);
 }
 
-LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
+bool Window::CloakIfRequired () {
 
     // in dark mode, to prevent flashbang, we cloak the window
-    // and uncloak it after first painting has finished;
+    // and uncloak it after a cycle (first repaint) has finished;
     // unfortunatelly we lose the window opening animation
 
-    if (auto option = Settings::Get (L"Start Cloaked", 1)) {
+    if (auto option = Settings::Get (L"Start Cloaked", Settings::Defaults::StartCloaked)) {
         if (this->global.dark || (option > 1)) { // 0 - don't cloak, 1 - cloak in dark mode, 2 - always cloak
             BOOL cloak = TRUE;
-            DwmSetWindowAttribute (this->hWnd, DWMWA_CLOAK, &cloak, sizeof cloak);
-            SetTimer (this->hWnd, TimerID::UnCloak, USER_TIMER_MINIMUM, NULL);
+            if (SUCCEEDED (DwmSetWindowAttribute (this->hWnd, DWMWA_CLOAK, &cloak, sizeof cloak))) {
+                SetTimer (this->hWnd, TimerID::UnCloak, Settings::Get (L"Cloak Duration", USER_TIMER_MINIMUM), NULL);
+                return true;
+            }
         }
     }
+    return false;
+}
+
+LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
+    this->CloakIfRequired ();
 
     ChangeWindowMessageFilter (Window::Message::UpdateSettings, MSGFLT_ADD);
 
@@ -164,6 +186,7 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
     }
 
     if (auto menu = GetSystemMenu (this->hWnd, FALSE)) {
+        auto place = GetMenuItemCount (menu) - 3;
         wchar_t buffer [64];
 
         MENUITEMINFO item;
@@ -175,14 +198,15 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
         do {
             item.cch = sizeof buffer / sizeof buffer [0];
         } while (GetMenuItemInfo (Window::wndmenu, i++, TRUE, &item)
-                && InsertMenuItem (menu, 127, TRUE, &item));
+                && InsertMenuItem (menu, place + i, TRUE, &item));
 
         if (cs->dwExStyle & WS_EX_TOPMOST) {
             CheckMenuItem (menu, ID::MENU_CMD_TOPMOST, MF_CHECKED);
         }
     }
 
-    if (auto hMenuBar = CreateWindowEx (0, TOOLBARCLASSNAME, L"", WS_CHILD | WS_VISIBLE
+    if (auto hMenuBar = CreateWindowEx (WS_EX_COMPOSITED, TOOLBARCLASSNAME, L"",
+                                        WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS
                                         | CCS_NODIVIDER | CCS_NOPARENTALIGN | CCS_NORESIZE | TBSTYLE_FLAT | TBSTYLE_TRANSPARENT,
                                         0, 0, 0, 0, hWnd, (HMENU) ID::MENUBAR, cs->hInstance, NULL)) {
 
@@ -198,19 +222,40 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
         this->RecreateMenuButtons (hMenuBar);
     }
 
-    if (auto hMenuNote = CreateWindowEx (0, L"BUTTON", L"F11", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+    if (auto hMenuNote = CreateWindowEx (WS_EX_COMPOSITED, TOOLBARCLASSNAME, L"",
+                                         WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS
+                                         | CCS_NODIVIDER | CCS_NOPARENTALIGN | CCS_NORESIZE | TBSTYLE_FLAT | TBSTYLE_TRANSPARENT,
                                          0, 0, 0, 0, hWnd, (HMENU) ID::MENUNOTE, cs->hInstance, NULL)) {
+
+        if (IsWindows11OrGreater ()) {
+            SetWindowSubclass (hMenuNote, ProperBgSubclassProcedure, 0, (DWORD_PTR) this);
+        }
+
+        SendMessage (hMenuNote, TB_BUTTONSTRUCTSIZE, sizeof (TBBUTTON), 0);
+        SendMessage (hMenuNote, TB_SETEXTENDEDSTYLE, 0, TBSTYLE_EX_MIXEDBUTTONS);
+        SendMessage (hMenuNote, TB_SETIMAGELIST, 0, 0);
+        SendMessage (hMenuNote, TB_SETDRAWTEXTFLAGS, DT_HIDEPREFIX, DT_HIDEPREFIX);
+
+        TBBUTTON button {};
+        button.fsState = TBSTATE_ENABLED;
+        button.fsStyle = BTNS_SHOWTEXT | BTNS_AUTOSIZE;
+        button.iString = (INT_PTR) L"F11";
+        button.idCommand = ID::MENUNOTE;
+
+        SendMessage (hMenuNote, TB_ADDBUTTONS, 1, (LPARAM) &button);
+        SendMessage (hMenuNote, TB_AUTOSIZE, 0, 0);
     }
 
     CreateWindowEx (0, L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_OWNERDRAW,
                     0, 0, 0, 0, hWnd, (HMENU) ID::SEPARATOR, cs->hInstance, NULL);
 
-    if (auto hEditor = CreateWindowEx (0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_HSCROLL | WS_VSCROLL | ES_MULTILINE | ES_WANTRETURN,
+    if (auto hEditor = CreateWindowEx (0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS |
+                                       WS_HSCROLL | WS_VSCROLL | ES_MULTILINE | ES_WANTRETURN,
                                        0, 0, 0, 0, hWnd, (HMENU) ID::EDITOR, cs->hInstance, NULL)) {
         // This is temporary
     }
 
-    auto style = WS_CHILD | SBARS_TOOLTIPS | CCS_NOPARENTALIGN;
+    auto style = WS_CHILD | SBARS_TOOLTIPS | CCS_NOPARENTALIGN | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
     if (cs->style & WS_THICKFRAME) {
         style |= SBARS_SIZEGRIP;
     }
@@ -236,20 +281,10 @@ void Window::UpdateFileName () {
     extern const wchar_t * szVersionInfo [8];
 
     if (this->handle != INVALID_HANDLE_VALUE) {
-        if (GetFinalPathNameByHandle (this->handle, szTmpPathBuffer, MAX_NT_PATH, 0)) {
-            DWORD offset = 0;
-
-            // remove prefixes
-            if (std::wcsncmp (szTmpPathBuffer, L"\\\\?\\UNC\\", 8) == 0) {
-                szTmpPathBuffer [6] = L'\\';
-                offset = 6;
-            } else
-            if (std::wcsncmp (szTmpPathBuffer, L"\\\\?\\", 4) == 0) {
-                offset = 4;
-            }
+        if (auto szFileName = this->File::GetCurrentFileName (szTmpPathBuffer, MAX_NT_PATH)) {
 
             // status bar
-            SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, (LPARAM) (szTmpPathBuffer + offset));
+            SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, 0);
 
             // construct caption
             if (auto file = std::wcsrchr (szTmpPathBuffer, L'\\')) {
@@ -263,13 +298,17 @@ void Window::UpdateFileName () {
 
         std::wcscat (szTmpPathBuffer, L" \x2013 ");
     } else {
-        SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, (LPARAM) L"");
+        SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, 0);
         szTmpPathBuffer [0] = L'\0';
     }
 
     // TODO: prefix with symbol if there are unsaved changes; maybe use taskbar overlay
 
     std::wcscat (szTmpPathBuffer, szVersionInfo [0]);
+
+    wchar_t szPID [16];
+    std::swprintf (szPID, 16, L" // %u", GetCurrentProcessId ());
+    std::wcscat (szTmpPathBuffer, szPID);
     SetWindowText (this->hWnd, szTmpPathBuffer);
 }
 
@@ -279,6 +318,7 @@ LRESULT Window::OnFinalize () {
 }
 
 LRESULT Window::OnActivate (WORD activated, BOOL minimized, HWND hOther) {
+    this->bActive = activated;
     if (activated) {
         SetFocus (GetDlgItem (this->hWnd, (int) ID::EDITOR));
     }
@@ -347,7 +387,9 @@ LRESULT Window::OnPositionChange (const WINDOWPOS & position) {
         auto hStatusBar = GetDlgItem (hWnd, (int) ID::STATUSBAR);
 
         SIZE szMenuBar;
+        SIZE szMenuNote;
         SendMessage (hMenuBar, TB_GETMAXSIZE, 0, (LPARAM) &szMenuBar);
+        SendMessage (hMenuNote, TB_GETMAXSIZE, 0, (LPARAM) &szMenuNote);
 
         auto yMenuBar = szMenuBar.cy;
         auto ySeparator = 1;
@@ -356,9 +398,9 @@ LRESULT Window::OnPositionChange (const WINDOWPOS & position) {
             ySeparator = 0;
         }
         auto yStatusBar = UpdateStatusBar (hStatusBar, this->dpi, client);
-        auto xMenuNote = 0;
-        if (this->bFullscreen && this->global.dark) {
-            xMenuNote = 48 * this->dpi / 96;
+        auto xMenuNote = szMenuNote.cx;
+        if (!this->bFullscreen || !this->global.dark) {
+            xMenuNote = 0;
         }
 
         if (HDWP hDwp = BeginDeferWindowPos (5)) {
@@ -378,7 +420,6 @@ LRESULT Window::OnPositionChange (const WINDOWPOS & position) {
             }
         }
         DwmExtendFrameIntoClientArea (hWnd, &margins);
-        //InvalidateRect (hWnd, NULL, TRUE);
     }
     return 0;
 }
@@ -392,9 +433,32 @@ LRESULT Window::OnTimer (WPARAM id) {
             BOOL cloak = FALSE;
             DwmSetWindowAttribute (this->hWnd, DWMWA_CLOAK, &cloak, sizeof cloak);
             KillTimer (this->hWnd, id);
+
+            if (this->bFullscreen) {
+                // this nudges taskbar to actually hide, as cloaking prevents that for some reason
+                ShowWindow (this->hWnd, SW_HIDE);
+                ShowWindowAsync (this->hWnd, SW_SHOW);
+            }
             break;
     }
     return 0;
+}
+
+bool Window::ToggleTopmost (int topmost) {
+    if (auto menu = GetSystemMenu (this->hWnd, FALSE)) {
+        bool checked = GetMenuState (menu, ID::MENU_CMD_TOPMOST, 0) & MF_CHECKED;
+
+        if (topmost == (int) checked)
+            return false;
+
+        // TODO: set/unset taskbar button badge
+
+        SetWindowPos (this->hWnd, checked ? HWND_NOTOPMOST : HWND_TOPMOST,
+                      0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
+        CheckMenuItem (menu, ID::MENU_CMD_TOPMOST, checked ? 0 : MF_CHECKED);
+        return true;
+    } else
+        return false;
 }
 
 LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
@@ -404,63 +468,31 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
             break;
 
         case ID::MENU_CMD_TOPMOST:
-            if (auto menu = GetSystemMenu (this->hWnd, FALSE)) {
-                auto checked = GetMenuState (menu, id, 0) & MF_CHECKED;
-                SetWindowPos (this->hWnd, checked ? HWND_NOTOPMOST : HWND_TOPMOST,
-                              0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-                CheckMenuItem (menu, id, checked ? 0 : MF_CHECKED);
-
-                // TODO: set/unset taskbar button badge
-            }
+            this->ToggleTopmost ();
             break;
 
         case 0x20:
             // New file
             // TODO: if unsaved changes, ask to save or not
+
+            if (this->IsOpen ()) {
+                this->close ();
+                this->UpdateFileName ();
+            }
             break;
 
         case 0x21:
-            new Window (SW_SHOWDEFAULT);
+            new Window (SW_SHOWNORMAL);
             break;
 
         case 0x22:
             //if unsaved changes ask: Save, Save As, Don't Save (forget changes), Cancel
 
-            // go with open
-        {
-            wchar_t mask [256];
+            this->OpenFile ();
+            break;
 
-            int i = 0x100;
-            int m = 0;
-            int n = 0;
-            while (m = LoadString (Windows::GetCurrentModuleHandle (), i, &mask [n], sizeof mask / sizeof mask [0] - n - 1)) {
-                n += m + 1;
-                i++;
-            }
-            mask [n] = L'\0';
-
-            szTmpPathBuffer [0] = L'\0';
-
-            OPENFILENAME ofn {};
-            ofn.lStructSize = sizeof (OPENFILENAME);
-            ofn.hwndOwner = this->hWnd;
-            ofn.hInstance = Windows::GetCurrentModuleHandle ();
-            ofn.lpstrFilter = mask;
-            ofn.lpstrCustomFilter = NULL;
-            ofn.nFilterIndex = 1;
-            ofn.lpstrFile = szTmpPathBuffer; // TODO: copy current path here? TODO: do not use shared buffer, multiple Open dialogs could be open
-            ofn.nMaxFile = MAX_NT_PATH;
-            ofn.lpstrFileTitle = NULL;
-            ofn.lpstrInitialDir = NULL;
-            ofn.lpstrTitle = NULL;
-            ofn.Flags = OFN_FILEMUSTEXIST | OFN_EXPLORER | OFN_ENABLESIZING; // ??? OFN_ALLOWMULTISELECT 
-            ofn.lpstrDefExt = L"txt";
-
-            if (GetOpenFileName (&ofn)) {
-                
-
-            }
-        }
+        case 0x23:
+            // TODO: Open Files
             break;
 
         case 0x5A:
@@ -468,7 +500,7 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
         case 0x5F:
         case 0x6E:
         case 0x6F:
-            Settings::Set (id, IsMenuItemChecked (menu, id));
+            Settings::Set (id, !IsMenuItemChecked (menu, id));
             EnumWindows ([] (HWND hWnd, LPARAM lParam) {
                              if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
                                  PostMessage (hWnd, Window::Message::UpdateSettings, 0, lParam);
@@ -488,31 +520,110 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
 
         case 0xFB: // F11
             this->bFullscreen = !this->bFullscreen;
+            this->CloakIfRequired ();
+
+            if (taskbar) {
+                taskbar->MarkFullscreenWindow (this->hWnd, this->bFullscreen);
+            }
+
             if (this->bFullscreen) {
-                if (IsZoomed (this->hWnd)) {
+                if (IsZoomed (this->hWnd) || IsIconic (this->hWnd)) {
                     ShowWindow (this->hWnd, SW_RESTORE);
                 }
                 GetWindowRect (this->hWnd, &this->rBeforeFullscreen);
                 SetWindowLong (this->hWnd, GWL_STYLE, WS_POPUP);
-
-                // bool shift = GetKeyState (VK_SHIFT) & 0x8000; // without menu and status bar?
                 ShowWindow (this->hWnd, SW_MAXIMIZE);
 
             } else {
-                SetWindowLong (this->hWnd, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN);
+                SetWindowLong (this->hWnd, GWL_STYLE, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS);
                 ShowWindow (this->hWnd, SW_RESTORE);
                 MoveWindow (this->hWnd, rBeforeFullscreen.left, rBeforeFullscreen.top,
                             rBeforeFullscreen.right - rBeforeFullscreen.left,
                             rBeforeFullscreen.bottom - rBeforeFullscreen.top, TRUE);
-            };
+            }
             break;
     }
     return 0;
 }
 
+DWORD GetErrorMessage (DWORD code, wchar_t * buffer, std::size_t length) {
+    if (auto n = FormatMessage (FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK |
+                                FORMAT_MESSAGE_FROM_SYSTEM, NULL, code, 0, buffer, (DWORD) length, NULL)) {
+        return n;
+    }
+
+    static const wchar_t * const modules [] = {
+        L"WININET",
+        L"NTDLL" // ???
+    };
+    for (auto i = 0u; i < sizeof modules / sizeof modules [0]; ++i) {
+        if (auto module = GetModuleHandle (modules [i])) {
+            if (auto n = FormatMessage (FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK |
+                                        FORMAT_MESSAGE_FROM_HMODULE, module, code, 0, buffer, (DWORD) length, NULL)) {
+                return n;
+            }
+        }
+    }
+    return 0;
+}
+
+void Window::OpenFile () {
+    wchar_t filename [MAX_NT_PATH];
+
+    OPENFILENAME ofn {};
+    ofn.lStructSize = sizeof (OPENFILENAME);
+    ofn.hwndOwner = this->hWnd;
+    ofn.hInstance = Windows::GetCurrentModuleHandle ();
+    ofn.lpstrFilter = szFilters;
+    ofn.lpstrCustomFilter = NULL;
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFile = this->File::GetCurrentFileName (filename, MAX_NT_PATH);
+    if (!ofn.lpstrFile) {
+        ofn.lpstrFile = filename;
+        filename [0] = L'\0';
+    }
+    ofn.nMaxFile = MAX_NT_PATH - 6;
+    ofn.lpstrFileTitle = NULL;
+    ofn.lpstrInitialDir = NULL;
+    ofn.lpstrTitle = NULL;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_EXPLORER | OFN_ENABLESIZING;
+    ofn.lpstrDefExt = L"txt";
+
+    if (GetOpenFileName (&ofn)) {
+        // MessageBox (this->hWnd, ofn.lpstrFile, ofn.lpstrFile, 0);
+
+        File f;
+        if (f.open (ofn.lpstrFile, !(ofn.Flags & OFN_READONLY))) {
+            this->close ();
+            *((File *) this) = std::move (f);
+
+            this->UpdateFileName ();
+        } else {
+            wchar_t err [256];
+            GetErrorMessage (GetLastError (), err, 256);
+            MessageBox (this->hWnd, err, err, MB_ICONERROR);
+            // TODO: Message box with failure
+
+            // TODO: if writable and access denied, try open for read and on success show msgbox
+        }
+    } else {
+        if (GetLastError () != ERROR_SUCCESS) { // not cancelled
+            wchar_t err [256];
+            GetErrorMessage (GetLastError (), err, 256);
+            MessageBox (this->hWnd, err, err, MB_ICONERROR);
+        }
+    }
+}
+
+void Window::OpenFiles () {
+    wchar_t filename [65536]; // max size stored in 2 bytes as documented for OPENFILENAME
+
+}
+
 LRESULT Window::OnNotify (WPARAM id, NMHDR * nm) {
     switch (id) {
         case ID::MENUBAR:
+        case ID::MENUNOTE:
             return this->OnNotifyMenuBar (id, nm);
 
         case ID::STATUSBAR:
@@ -530,9 +641,6 @@ LRESULT Window::OnDrawItem (WPARAM id, const DRAWITEMSTRUCT * draw) {
             }
             return TRUE;
 
-        case ID::MENUNOTE:
-            return this->OnDrawMenuNote (id, draw);
-
         case ID::STATUSBAR:
             return this->OnDrawStatusBar (id, draw);
     }
@@ -543,7 +651,7 @@ LRESULT Window::OnEraseBackground (HDC hDC) {
     RECT r;
     GetClientRect (this->hWnd, &r);
 
-    // printf ("OnEraseBackground %p: %p\n", this->hWnd, WindowFromDC (hDC));
+    printf ("OnEraseBackground %p: %p\n", this->hWnd, WindowFromDC (hDC));
 
     SetDCBrushColor (hDC, 0x000000);
     FillRect (hDC, &r, (HBRUSH) GetStockObject (DC_BRUSH));
@@ -607,13 +715,39 @@ LRESULT Window::OnCopyData (HWND hSender, ULONG_PTR code, const void * data, std
     return 0;
 }
 
+LRESULT Window::OnDropFiles (HDROP hDrop) {
+    if (auto n = DragQueryFile (hDrop, 0xFFFFFFFF, NULL, 0)) {
+        for (auto i = 0u; i != n; ++i) {
+
+            TCHAR szFileName [MAX_NT_PATH];
+            if (DragQueryFile (hDrop, i, szFileName, MAX_NT_PATH)) {
+                //MessageBox (hWnd, szFileName, szFileName, 0);
+
+                if (n > 1) {
+                    // TODO: open in new window
+
+
+                } else {
+                    // TODO: open in this window
+
+
+                }
+            }
+        }
+    }
+
+    DragFinish (hDrop);
+    return 0;
+}
+
 LRESULT Window::OnDpiChange (RECT *, LONG) {
     auto dpiNULL = Windows::GetDPI (NULL);
     if (auto hMenuBar = GetDlgItem (this->hWnd, ID::MENUBAR)) {
         SendMessage (hMenuBar, TB_SETPADDING, 0, MAKELPARAM (8 * this->dpi / dpiNULL, 4 * this->dpi / dpiNULL));
         this->RecreateMenuButtons (hMenuBar);
-
-        SendDlgItemMessage (hWnd, ID::MENUNOTE, WM_SETFONT, SendMessage (hMenuBar, WM_GETFONT, 0, 0), 1);
+    }
+    if (auto hMenuNote = GetDlgItem (this->hWnd, ID::MENUNOTE)) {
+        SendMessage (hMenuNote, TB_SETPADDING, 0, MAKELPARAM (8 * this->dpi / dpiNULL, 4 * this->dpi / dpiNULL));
     }
     return 0;
 }

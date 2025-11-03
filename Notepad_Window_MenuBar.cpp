@@ -122,17 +122,8 @@ LRESULT Window::OnMenuClose (HMENU menu, USHORT flags) {
 HBRUSH Window::CreateDarkMenuBarBrush (bool hot) {
     if (this->global.dark) {
         if (hot) {
-            COLORREF clr = 0;
-            if (IsWindows11OrGreater ()) {
-                if (IsMenuItemChecked (menu, 0x5A) && (GetActiveWindow () == this->hWnd)) {
-                    clr = this->global.accent;
-                }
-            } else {
-                clr = this->global.accent;
-            }
-
-            if (clr) {
-                return Windows::CreateSolidBrushEx (clr, 255);
+            if (this->bActive && IsMenuItemChecked (menu, 0x5A)) {
+                return Windows::CreateSolidBrushEx (this->global.accent, 255);
             } else {
                 return CreateSolidBrush (0x000000);
             }
@@ -142,7 +133,7 @@ HBRUSH Window::CreateDarkMenuBarBrush (bool hot) {
             if (this->bFullscreen) {
                 if (!IsWindows11OrGreater ()) {
                     COLORREF clr;
-                    if (GetForegroundWindow () == this->hWnd) {
+                    if (this->bActive) {
                         clr = RGB (GetRValue (this->global.active) / 2,
                                    GetGValue (this->global.active) / 2,
                                    GetBValue (this->global.active) / 2);
@@ -181,8 +172,6 @@ LRESULT Window::OnNotifyMenuBar (WPARAM id, NMHDR * nm) {
                         return CDRF_DODEFAULT;
 
                 case CDDS_ITEMPREPAINT:
-                    const bool active = (GetActiveWindow () == this->hWnd);
-
                     if ((nmtb->nmcd.dwItemSpec == this->active_menu) || (nmtb->nmcd.uItemState & CDIS_HOT)) {
                         if (auto hBrush = this->CreateDarkMenuBarBrush (true)) {
                             FillRect (nmtb->nmcd.hdc, &nmtb->nmcd.rc, hBrush);
@@ -191,14 +180,24 @@ LRESULT Window::OnNotifyMenuBar (WPARAM id, NMHDR * nm) {
                     }
 
                     COLORREF color;
-                    if (active || (nmtb->nmcd.uItemState & CDIS_HOT)) {
+                    if (this->bActive || (nmtb->nmcd.uItemState & CDIS_HOT)) {
                         color = this->global.text;
                     } else {
                         color = GetSysColor (COLOR_GRAYTEXT);
                     }
 
                     wchar_t text [64];
-                    auto n = GetMenuString (Window::menu, (UINT) nmtb->nmcd.dwItemSpec, text, sizeof text / sizeof text [0], MF_BYPOSITION);
+                    int n = 0;
+                    switch (id) {
+                        case ID::MENUBAR:
+                            n = GetMenuString (Window::menu, (UINT) nmtb->nmcd.dwItemSpec, text, sizeof text / sizeof text [0], MF_BYPOSITION);
+                            break;
+                        case ID::MENUNOTE:
+                            std::wcscpy (text, L"\xE1D8");
+                            n = 1;
+                            break;
+                    }
+
                     DWORD flags = DT_CENTER | DT_VCENTER | DT_SINGLELINE;
                     if (!this->bMenuAccelerators) {
                         flags |= DT_HIDEPREFIX;
@@ -212,25 +211,6 @@ LRESULT Window::OnNotifyMenuBar (WPARAM id, NMHDR * nm) {
     }
 
     return 0;
-}
-
-LRESULT Window::OnDrawMenuNote (WPARAM id, const DRAWITEMSTRUCT * draw) {
-    if (auto hBrush = this->CreateDarkMenuBarBrush (false)) {
-        FillRect (draw->hDC, &draw->rcItem, hBrush);
-        DeleteObject (hBrush);
-
-        COLORREF color;
-        if (GetActiveWindow () == this->hWnd) {
-            color = this->global.text;
-        } else {
-            color = GetSysColor (COLOR_GRAYTEXT);
-        }
-
-        SetBkMode (draw->hDC, TRANSPARENT);
-        Windows::DrawTextComposited (draw->hwndItem, draw->hDC, L"\xE1D8 ", 2, DT_VCENTER | DT_RIGHT | DT_SINGLELINE | DT_NOPREFIX, color, &draw->rcItem);
-        return TRUE;
-    } else
-        return FALSE;
 }
 
 void Window::RecreateMenuButtons (HWND hMenuBar) {
