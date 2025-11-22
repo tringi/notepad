@@ -1,6 +1,8 @@
 #include "Notepad_Window.hpp"
 #include "Notepad_Settings.hpp"
 #include "Windows\Windows_DrawTextComposited.hpp"
+#include "Windows\Windows_IsWindowsBuildOrGreater.hpp"
+#include "Windows\Windows_CreateSolidBrushEx.hpp"
 
 extern wchar_t szTmpPathBuffer [MAX_NT_PATH];
 
@@ -57,6 +59,14 @@ LRESULT CALLBACK TooltipThemeSubclassProcedure (HWND hWnd, UINT message, WPARAM 
     return DefSubclassProc (hWnd, message, wParam, lParam);
 }
 
+void Window::SetStatus (StatusBarCell::Constant cell, const wchar_t * text) {
+    WPARAM wParam = SBT_OWNERDRAW | (WPARAM) cell;
+    if (this->global.dark) {
+        wParam |= SBT_NOBORDERS;
+    }
+    SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, wParam, (LPARAM) text);
+}
+
 SIZE GetClientSize (HWND hWnd);
 
 LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
@@ -64,7 +74,7 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
 
     SIZE status = GetClientSize (hStatusBar);
 
-    static const short widths [] = { 64, 64, 52, 44, 44, 96, 128 };
+    static const short widths [] = { 64, 64, 56, 52, 48, 96, 128 };
     static const auto  n = sizeof widths / sizeof widths [0];
 
     int scaled [n + 1] = {};
@@ -82,17 +92,46 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
     SendMessage (hStatusBar, SB_SETPARTS, n + 1, (LPARAM) scaled);
 
     this->UpdateFileName ();
-
-    SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::CursorPos| SBT_OWNERDRAW, (LPARAM) L"5\x2236""16"); // TODO: click to Go To
-    SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::FileSize | SBT_OWNERDRAW, (LPARAM) L"240\x200AkB");
-    SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::ZoomLevel| SBT_OWNERDRAW, (LPARAM) L"100\x200A%"); // TODO: click to Zoom
-    SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::LineEnds | SBT_OWNERDRAW, (LPARAM) L"CR LF"); // TODO: click to change
-    SendMessage (hStatusBar, SB_SETTEXT, StatusBarCell::Encoding | SBT_OWNERDRAW, 0); // UTF-16 LE, click to change
+    this->SetStatus (StatusBarCell::CursorPos, L"5\x2236""16"); // TODO: click to Go To
+    this->SetStatus (StatusBarCell::FileSize,  L"240\x200AkB");
+    this->SetStatus (StatusBarCell::Reserved,  L"X");
+    this->SetStatus (StatusBarCell::ZoomLevel, L"100\x200A%"); // TODO: click to Zoom
+    this->SetStatus (StatusBarCell::LineEnds,  L"CR LF"); // TODO: click to change
+    this->SetStatus (StatusBarCell::Encoding,  nullptr); // UTF-16 LE, click to change
+    this->SetStatus (StatusBarCell::Corner,    L"X");
 
     return status.cy;
 }
 
 LRESULT Window::OnDrawStatusBar (WPARAM id, const DRAWITEMSTRUCT * draw) {
+
+    if (draw->itemID != StatusBarCell::Corner && this->global.dark) {
+        RECT r = draw->rcItem;
+        r.top += 1 * this->dpi / USER_DEFAULT_SCREEN_DPI;
+        r.left = r.right - 1 * this->dpi / USER_DEFAULT_SCREEN_DPI;
+        r.bottom -= 2 * this->dpi / USER_DEFAULT_SCREEN_DPI;
+
+        COLORREF color;
+        UCHAR alpha;
+        if (this->bActive) {
+            if (this->global.prevalence) {
+                color = this->global.accent;
+                alpha = this->global.accent >> 24u;
+            } else {
+                color = this->global.text;
+                alpha = 255;
+            }
+        } else {
+            color = GetSysColor (COLOR_GRAYTEXT);
+            alpha = 192;
+        }
+
+        if (auto hBrush = Windows::CreateSolidBrushEx (color, alpha)) {
+            FillRect (draw->hDC, &r, hBrush);
+            DeleteObject (hBrush);
+        }
+    }
+
     COLORREF color;
     if (this->bActive) {
         color = this->global.text;

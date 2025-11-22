@@ -37,6 +37,8 @@ private:
 
     HMENU hActiveMenu = NULL;
 
+    bool bTmpChanged = false; // TODO: !editor.diffs.empty()
+
 public:
     using File::handle;
 
@@ -77,7 +79,7 @@ public:
         };
     };
     struct StatusBarCell {
-        enum : UCHAR {
+        enum Constant : UCHAR {
             FileName = 0,
             CursorPos = 1,
             Reserved = 2,
@@ -85,11 +87,13 @@ public:
             ZoomLevel = 4,
             LineEnds = 5,
             Encoding = 6,
+            Corner = 7
         };
     };
 
     static ATOM InitAtom (HINSTANCE hInstance);
     static ATOM Initialize (HINSTANCE hInstance);
+    static void InitializeFileOps (HINSTANCE hInstance);
 
 public:
     explicit Window (int show);
@@ -123,11 +127,12 @@ private:
     void ShowMenuAccelerators (BOOL show);
     void RecreateMenuButtons (HWND hMenuBar);
     void UpdateFileName ();
-    void OpenFile ();
-    void OpenFiles ();
+    void OpenFile (bool multiple);
+    void SetStatus (StatusBarCell::Constant, const wchar_t *);
     LONG UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE size);
     HBRUSH CreateDarkMenuBarBrush (bool hot);
 
+    LRESULT OnFileOpCommand (HWND hChild, USHORT id, USHORT notification);
     LRESULT OnDrawStatusBar (WPARAM id, const DRAWITEMSTRUCT * draw);
     LRESULT OnNotifyStatusBar (WPARAM id, NMHDR *);
     LRESULT OnNotifyMenuBar (WPARAM id, NMHDR *);
@@ -142,5 +147,8 @@ private:
     Window (const Window &) = delete;
     Window & operator = (const Window &) = delete;
 };
+
+bool IsMenuItemChecked (HMENU menu, UINT id);
+bool IsWindows11OrGreater ();
 
 #endif
