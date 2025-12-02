@@ -37,15 +37,23 @@ struct Editor {
 };
 
 bool File::init (HANDLE h) noexcept {
-    if (h != INVALID_HANDLE_VALUE) {
+    if (this->init_id (h)) {
         this->handle = h;
+        return true;
+    } else
+        return false;
+}
 
-        if (GetFileInformationByHandleEx (this->handle, FileIdInfo, &this->id, sizeof this->id)) {
+bool File::init_id (HANDLE h) noexcept {
+    if (h != INVALID_HANDLE_VALUE) {
+        std::memset (&this->id, 0, sizeof this->id);
+
+        if (GetFileInformationByHandleEx (h, FileIdInfo, &this->id, sizeof this->id)) {
             this->id_type = ExtendedFileIdType;
 
         } else {
             BY_HANDLE_FILE_INFORMATION info;
-            if (GetFileInformationByHandle (this->handle, &info)) {
+            if (GetFileInformationByHandle (h, &info)) {
 
                 this->id_type = FileIdType;
                 this->id.VolumeSerialNumber = info.dwVolumeSerialNumber;
@@ -65,8 +73,17 @@ bool File::init (const wchar_t * path) noexcept {
 
     // TODO: support passing file id like: <volume:id-bytes> for OpenFileById
 
-    return this->init (CreateFile (path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE,
+    return this->init (CreateFile (path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                    NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL));
+}
+
+bool File::open () noexcept {
+    return this->open (true)
+        || this->open (false);
+}
+
+bool File::open (HANDLE h) noexcept {
+    return this->init (h) && this->open ();
 }
 
 bool File::open (bool writable) noexcept {
@@ -88,20 +105,34 @@ bool File::open (bool writable) noexcept {
             break;
     }
 
-    auto h = OpenFileById (this->handle, &descriptor,
-                           GENERIC_READ | (writable ? GENERIC_WRITE : 0),
-                           FILE_SHARE_READ, NULL, FILE_FLAG_SEQUENTIAL_SCAN);
+    return this->open (OpenFileById (this->handle, &descriptor,
+                                     GENERIC_READ | (writable ? GENERIC_WRITE : 0),
+                                     FILE_SHARE_READ, NULL, FILE_FLAG_SEQUENTIAL_SCAN),
+                       writable);
+}
 
+bool File::open (const wchar_t * path, bool writable) noexcept {
+    auto h = CreateFile (path, GENERIC_READ | (writable ? GENERIC_WRITE : 0),
+                         FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+
+    this->init_id (h);
+    if (this->open (h, writable))
+        return true;
+
+    if (writable)
+        return this->open (path, false);
+
+    return false;
+}
+
+bool File::open (HANDLE h, bool writable) noexcept {
     if (h != INVALID_HANDLE_VALUE) {
 
-        // TODO: on commit, close mapping, append to the file, and reopen mapping
+        // TBD: on commit close mapping, extend file size, reopen mapping, update
 
         LARGE_INTEGER size;
         if (GetFileSizeEx (h, &size)) {
             if (size.QuadPart) {
-
-                // TODO: how to handle file that's too large?
-                // TODO: opening from network doesn't work, copy content
 
                 if (auto m = CreateFileMapping (h, NULL,
                                                 writable ? PAGE_READWRITE : PAGE_READONLY,
@@ -109,11 +140,12 @@ bool File::open (bool writable) noexcept {
                     if (auto p = MapViewOfFile (m,
                                                 writable ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ,
                                                 0, 0, 0)) {
-                        this->close ();
-
                         this->handle = h;
                         this->mapping = m;
                         this->data = p;
+                        this->writable = writable;
+
+                        // TODO: launch thread to start scanning the file for newlines
                         return true;
                     }
 
@@ -121,8 +153,10 @@ bool File::open (bool writable) noexcept {
                 }
             } else {
                 // empty file
-                this->close ();
                 this->handle = h;
+                this->mapping = NULL;
+                this->data = NULL;
+                this->writable = writable;
                 return true;
             }
         }
@@ -132,19 +166,9 @@ bool File::open (bool writable) noexcept {
     return false;
 }
 
-bool File::open (const wchar_t * path, bool writable) noexcept {
-    if (this->init (CreateFile (path, GENERIC_READ | (writable ? GENERIC_WRITE : 0), FILE_SHARE_READ,
-                                NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL))) {
-
-        // TODO: try mapping, then try copy
-
-        return true;
-    } else
-        return false;
-}
-
 void File::close () {
     this->id_type = MaximumFileIdType;
+    this->writable = false;
 
     if (this->data) {
         UnmapViewOfFile (this->data);
@@ -154,7 +178,7 @@ void File::close () {
         CloseHandle (this->mapping);
         this->mapping = NULL;
     }
-    if (this->handle) {
+    if (this->handle != INVALID_HANDLE_VALUE) {
         CloseHandle (this->handle);
         this->handle = INVALID_HANDLE_VALUE;
     }
@@ -172,19 +196,19 @@ bool File::IsOpen (const FILE_ID_INFO * check) const noexcept {
 }
 
 wchar_t * File::GetCurrentFileName (wchar_t * buffer, DWORD length) const {
-    if (GetFinalPathNameByHandle (this->handle, buffer, length, 0)) {
-        DWORD offset = 0;
+    if (this->handle == INVALID_HANDLE_VALUE)
+        return nullptr;
+
+    if (std::size_t result = GetFinalPathNameByHandle (this->handle, buffer, length, 0)) {
 
         // remove prefixes
         if (std::wcsncmp (buffer, L"\\\\?\\UNC\\", 8) == 0) {
-            buffer [6] = L'\\';
-            offset = 6;
+            std::wmemmove (buffer + 2, buffer + 8, result - 8 + 1);
         } else
         if (std::wcsncmp (buffer, L"\\\\?\\", 4) == 0) {
-            offset = 4;
+            std::wmemmove (buffer + 0, buffer + 4, result - 4 + 1);
         }
-
-        return buffer + offset;
+        return buffer;
     } else
         return nullptr;
 }
