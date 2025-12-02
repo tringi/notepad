@@ -74,7 +74,7 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
 
     SIZE status = GetClientSize (hStatusBar);
 
-    static const short widths [] = { 64, 64, 56, 52, 48, 96, 128 };
+    static const short widths [] = { 64, 80, 56, 52, 48, 96, 128 };
     static const auto  n = sizeof widths / sizeof widths [0];
 
     int scaled [n + 1] = {};
@@ -92,13 +92,17 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
     SendMessage (hStatusBar, SB_SETPARTS, n + 1, (LPARAM) scaled);
 
     this->UpdateFileName ();
+
+    // TODO: if changes were made, number of rows changed (size in hint)
+    // TODO: open mode (writable or readonly)
+
     this->SetStatus (StatusBarCell::CursorPos, L"5\x2236""16"); // TODO: click to Go To
     this->SetStatus (StatusBarCell::FileSize,  L"240\x200AkB");
-    this->SetStatus (StatusBarCell::Reserved,  L"X");
+    this->SetStatus (StatusBarCell::ReadOnly,  nullptr);
     this->SetStatus (StatusBarCell::ZoomLevel, L"100\x200A%"); // TODO: click to Zoom
     this->SetStatus (StatusBarCell::LineEnds,  L"CR LF"); // TODO: click to change
     this->SetStatus (StatusBarCell::Encoding,  nullptr); // UTF-16 LE, click to change
-    this->SetStatus (StatusBarCell::Corner,    L"X");
+    this->SetStatus (StatusBarCell::Corner,    L"");
 
     return status.cy;
 }
@@ -151,8 +155,21 @@ LRESULT Window::OnDrawStatusBar (WPARAM id, const DRAWITEMSTRUCT * draw) {
     LPCWSTR string = NULL;
     switch (draw->itemID) {
         case StatusBarCell::FileName:
-            string = this->File::GetCurrentFileName (szTmpPathBuffer, MAX_NT_PATH);
+            if (this->handle != INVALID_HANDLE_VALUE) {
+                string = this->File::GetCurrentFileName (szTmpPathBuffer, MAX_NT_PATH);
+                if (!string) {
+                    string = L"\x2370";
+                }
+            }
             break;
+        case StatusBarCell::ReadOnly:
+            if (this->handle != INVALID_HANDLE_VALUE) {
+                if (!this->File::writable) {
+                    string = L"Read Only";
+                }
+            }
+            break;
+
         case StatusBarCell::CursorPos:
             
             break;

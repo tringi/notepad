@@ -82,7 +82,7 @@ public:
         enum Constant : UCHAR {
             FileName = 0,
             CursorPos = 1,
-            Reserved = 2,
+            ReadOnly = 2,
             FileSize = 3,
             ZoomLevel = 4,
             LineEnds = 5,
@@ -96,8 +96,23 @@ public:
     static void InitializeFileOps (HINSTANCE hInstance);
 
 public:
-    explicit Window (int show);
-    explicit Window (int show, File &&);
+    struct OpenMode {
+        int  show = SW_SHOWNORMAL;
+        HWND above = NULL; // if set, window is shown below this hWnd
+
+        OpenMode (int show) {
+            this->show = show;
+        }
+        explicit OpenMode (HWND hAbove) {
+            if (GetKeyState (VK_CONTROL) & 0x8000) {
+                this->show = SW_SHOWNOACTIVATE;
+                this->above = hAbove;
+            }
+        }
+    };
+
+    explicit Window (OpenMode mode);
+    explicit Window (OpenMode mode, File &&);
 
 private:
     virtual LRESULT OnCreate (const CREATESTRUCT *) override;
@@ -122,7 +137,7 @@ private:
 
     bool ToggleTopmost (int topmost = -1);
     bool CloakIfRequired ();
-    void CommonConstructor (int show);
+    void CommonConstructor (OpenMode mode);
     void TrackMenu (UINT index);
     void ShowMenuAccelerators (BOOL show);
     void RecreateMenuButtons (HWND hMenuBar);
