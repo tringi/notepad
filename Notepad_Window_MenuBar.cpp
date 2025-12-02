@@ -6,13 +6,49 @@
 #include "Windows\Windows_IsWindowsBuildOrGreater.hpp"
 #include "Windows\Windows_DrawTextComposited.hpp"
 
-namespace {
-    inline bool IsMenuItemChecked (HMENU menu, UINT id) {
-        return GetMenuState (menu, id, MF_BYCOMMAND) & MF_CHECKED;
+LRESULT CALLBACK ProperBgSubclassProcedure (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
+                                            UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+    auto self = reinterpret_cast <Window *> (dwRefData);
+
+    switch (message) {
+        case WM_ERASEBKGND:
+            if (self->GetPresentation ().dark) {
+                RECT r;
+                if (GetClientRect (hWnd, &r)) {
+                    HBRUSH hBrush = NULL;
+                    if (IsWindows11OrGreater ()) {
+                        uIdSubclass = 0;
+                    }
+                    switch (uIdSubclass) {
+                        case 1: // Windows 10 dark menu background
+                            if (GetForegroundWindow () == GetParent (hWnd)) {
+                                hBrush = Windows::CreateSolidBrushEx (self->GetPresentation ().active, 128);
+                            } else {
+                                hBrush = Windows::CreateSolidBrushEx (self->GetPresentation ().inactive, 255);
+                            }
+                            break;
+                        case 0: // W7/W11 fully transparent background to expose aero/mica backdrop
+                            BOOL enabled;
+                            if (SUCCEEDED (DwmIsCompositionEnabled (&enabled)) && enabled) {
+                                hBrush = (HBRUSH) GetStockObject (BLACK_BRUSH);
+                            } else {
+                                hBrush = (HBRUSH) SendMessage (GetParent (hWnd), WM_CTLCOLORBTN, wParam, (LPARAM) hWnd);
+                            }
+                            break;
+                    }
+                    if (hBrush) {
+                        FillRect ((HDC) wParam, &r, hBrush);
+                        switch (uIdSubclass) {
+                            case 1:
+                                DeleteObject (hBrush);
+                        }
+                    }
+                    return TRUE;
+                }
+            }
+            break;
     }
-    inline bool IsWindows11OrGreater () {
-        return Windows::IsWindowsBuildOrGreater (22000);
-    }
+    return DefSubclassProc (hWnd, message, wParam, lParam);
 }
 
 void Window::ShowMenuAccelerators (BOOL show) {
