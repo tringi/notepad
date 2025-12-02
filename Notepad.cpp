@@ -13,6 +13,7 @@
 #include "Notepad_Window.hpp"
 #include "Notepad_Settings.hpp"
 #include "Notepad_File.hpp"
+#include "Notepad_IPC.hpp"
 
 #include "Windows\Windows_GetFullPath.hpp"
 #include "Windows\Windows_AccessibilityTextScale.hpp"
@@ -30,131 +31,6 @@ ITaskbarList3 * taskbar = nullptr;
 ATOM InitializeGUI (HINSTANCE);
 bool InitVersionInfoStrings (HINSTANCE);
 DWORD WINAPI ApplicationRecoveryCallback (PVOID);
-
-std::uint8_t ForwardProperShowStyle (std::uintptr_t nCmdShow) {
-    if (nCmdShow == SW_SHOWDEFAULT) {
-        STARTUPINFO si {};
-        si.cb = sizeof si;
-        GetStartupInfo (&si);
-        if (si.dwFlags & STARTF_USESHOWWINDOW) {
-            nCmdShow = si.wShowWindow;
-        } else {
-            nCmdShow = SW_SHOWNORMAL;
-        }
-    }
-    if (nCmdShow > SW_MAX) {
-        nCmdShow = SW_SHOWNORMAL;
-    }
-    return (std::uint8_t) nCmdShow;
-}
-
-bool AskInstancesForOpenFile (File * file, std::map <DWORD, HWND> * instances) {
-    struct Trampoline {
-        File * file;
-        std::map <DWORD, HWND> * instances;
-    } p = { file, instances };
-
-    return EnumWindows ([] (HWND hWnd, LPARAM p) {
-                            if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
-                                auto trampoline = (Trampoline *) p;
-
-                                COPYDATASTRUCT data = {
-                                    Window::CopyCode::OpenFileCheck,
-                                    sizeof (FILE_ID_INFO),
-                                    (void *) &trampoline->file->id
-                                };
-
-                                DWORD_PTR result = 0;
-                                if (SendMessageTimeout (hWnd, WM_COPYDATA, NULL, (LPARAM) &data,
-                                                        SMTO_NOTIMEOUTIFNOTHUNG | SMTO_ERRORONEXIT | SMTO_BLOCK,
-                                                        1000, &result)) {
-                                    if (result) {
-                                        if (IsIconic (hWnd)) {
-                                            OpenIcon (hWnd);
-                                        }
-                                        SetForegroundWindow (hWnd);
-                                        return FALSE;
-                                    }
-                                }
-
-                                DWORD pid;
-                                if (GetWindowThreadProcessId (hWnd, &pid)) {
-                                    try {
-                                        trampoline->instances->insert ({ pid, hWnd });
-                                    } catch (...) {
-                                        // ignore failures to insert
-                                    }
-                                }
-                            }
-                            return TRUE;
-                        }, (LPARAM) &p) == FALSE;
-}
-
-BOOL CloseHandleEx (HANDLE hProcess, HANDLE hHandle) {
-    HANDLE hCleanup = NULL;
-    if (DuplicateHandle (hProcess, hHandle, GetCurrentProcess (), &hCleanup, 0, FALSE, DUPLICATE_CLOSE_SOURCE)) {
-        CloseHandle (hCleanup);
-        return TRUE;
-    } else
-        return FALSE;
-}
-
-bool AskInstanceToOpenFile (DWORD pid, HWND hWnd, HANDLE hFile, int nCmdShow) {
-    if (HANDLE hPeer = OpenProcess (PROCESS_DUP_HANDLE, FALSE, pid)) {
-        HANDLE hPeerFile = NULL;
-
-        if (DuplicateHandle (GetCurrentProcess (), hFile, hPeer, &hPeerFile, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
-
-            Window::OpenFileRequest request = {};
-            request.handle = (std::intptr_t) hPeerFile;
-            request.nCmdShow = ForwardProperShowStyle (nCmdShow);
-
-            COPYDATASTRUCT data = {
-                Window::CopyCode::OpenFile,
-                sizeof request, &request
-            };
-
-            if (auto hPeerWindow = (HWND) SendMessage (hWnd, WM_COPYDATA, NULL, (LPARAM) &data)) {
-                SetForegroundWindow (hPeerWindow);
-                return true;
-            }
-
-            // on failure, cleanup the handle we copied into the other process, to not lock the file
-
-            CloseHandleEx (hPeer, hPeerFile);
-        }
-    }
-    return false;
-}
-
-bool AskInstancesToOpenWindow (int nCmdShow) {
-    return EnumWindows ([] (HWND hWnd, LPARAM nCmdShow) {
-                            if (GetClassWord (hWnd, GCW_ATOM) == Window::atom) {
-
-                                Window::OpenFileRequest request = {};
-                                request.nCmdShow = ForwardProperShowStyle (nCmdShow);
-
-                                COPYDATASTRUCT data = {
-                                    Window::CopyCode::OpenFile,
-                                    sizeof request, &request
-                                };
-
-                                DWORD pid;
-                                if (GetWindowThreadProcessId (hWnd, &pid)) {
-                                    AllowSetForegroundWindow (pid);
-                                }
-
-                                DWORD_PTR result = 0;
-                                if (SendMessageTimeout (hWnd, WM_COPYDATA, NULL, (LPARAM) &data,
-                                                        SMTO_NOTIMEOUTIFNOTHUNG | SMTO_ERRORONEXIT | SMTO_BLOCK,
-                                                        1000, &result)) {
-                                    if (result)
-                                        return FALSE;
-                                }
-                            }
-                            return TRUE;
-                        }, (LPARAM) nCmdShow) == FALSE;
-}
 
 int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow) {
     SetLastError (0);
@@ -206,7 +82,7 @@ int CALLBACK wWinMain (_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR
 
                 std::map <DWORD, HWND> instances;
 
-                if (AskInstancesForOpenFile (&file, &instances))
+                if (AskInstancesForOpenFile (NULL, &file, &instances))
                     return ERROR_SUCCESS;
 
                 // if there is at least one instance running, ask it to open the file
@@ -443,16 +319,18 @@ ATOM InitializeGUI (HINSTANCE hInstance) {
     if (!InitCommonControlsEx (&classes))
         return false;
 
-    switch (CoInitializeEx (NULL, COINIT_MULTITHREADED | COINIT_DISABLE_OLE1DDE)) {
+    switch (CoInitializeEx (NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)) {
         case S_OK:
         case S_FALSE: // already initialized
             break;
         default:
             return false;
-    }//*/
+    }
 
     Windows::WindowPresentation::Initialize ();
     //RegisterWindowMessage (L"TaskbarCreated");
+
+    Window::InitializeFileOps (hInstance);
     return Window::Initialize (hInstance);
 }
 
