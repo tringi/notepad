@@ -5,9 +5,7 @@
 #include "Windows\Windows_AccessibilityTextScale.hpp"
 #include "Windows\Windows_CreateSolidBrushEx.hpp"
 #include "Windows\Windows_IsWindowsBuildOrGreater.hpp"
-#include "Windows\Windows_GetCurrentModuleHandle.hpp"
 
-#include <commdlg.h>
 #include <Shobjidl.h>
 
 extern Windows::TextScale scale;
@@ -16,6 +14,7 @@ extern wchar_t szTmpPathBuffer [MAX_NT_PATH];
 
 LRESULT CALLBACK StatusBarTooltipSubclassProcedure (HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 LRESULT CALLBACK TooltipThemeSubclassProcedure (HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
+LRESULT CALLBACK ProperBgSubclassProcedure (HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 
 namespace {
     HMODULE LoadResourcesModule () {
@@ -32,60 +31,14 @@ namespace {
         return (ATOM) GetClassInfoEx (NULL, name, &wc);
     }
 
-    inline bool IsMenuItemChecked (HMENU menu, UINT id) {
-        return GetMenuState (menu, id, MF_BYCOMMAND) & MF_CHECKED;
-    }
-    inline bool IsWindows11OrGreater () {
-        return Windows::IsWindowsBuildOrGreater (22000);
-    }
-
-    LRESULT CALLBACK ProperBgSubclassProcedure (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
-                                                UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
-        auto self = reinterpret_cast <Window *> (dwRefData);
-
-        switch (message) {
-            case WM_ERASEBKGND:
-                if (self->GetPresentation ().dark) {
-                    RECT r;
-                    if (GetClientRect (hWnd, &r)) {
-                        HBRUSH hBrush = NULL;
-                        if (IsWindows11OrGreater ()) {
-                            uIdSubclass = 0;
-                        }
-                        switch (uIdSubclass) {
-                            case 1: // Windows 10 dark menu background
-                                if (GetForegroundWindow () == GetParent (hWnd)) {
-                                    hBrush = Windows::CreateSolidBrushEx (self->GetPresentation ().active, 128);
-                                } else {
-                                    hBrush = Windows::CreateSolidBrushEx (self->GetPresentation ().inactive, 255);
-                                }
-                                break;
-                            case 0: // W7/W11 fully transparent background to expose aero/mica backdrop
-                                BOOL enabled;
-                                if (SUCCEEDED (DwmIsCompositionEnabled (&enabled)) && enabled) {
-                                    hBrush = (HBRUSH) GetStockObject (BLACK_BRUSH);
-                                } else {
-                                    hBrush = (HBRUSH) SendMessage (GetParent (hWnd), WM_CTLCOLORBTN, wParam, (LPARAM) hWnd);
-                                }
-                                break;
-                        }
-                        if (hBrush) {
-                            FillRect ((HDC) wParam, &r, hBrush);
-                            switch (uIdSubclass) {
-                                case 1:
-                                    DeleteObject (hBrush);
-                            }
-                        }
-                        return TRUE;
-                    }
-                }
-        }
-        return DefSubclassProc (hWnd, message, wParam, lParam);
-    }
-
-    wchar_t szFilters [256];
-
     ATOM atomCOMBOBOX = 0;
+}
+
+bool IsMenuItemChecked (HMENU menu, UINT id) {
+    return GetMenuState (menu, id, MF_BYCOMMAND) & MF_CHECKED;
+}
+bool IsWindows11OrGreater () {
+    return Windows::IsWindowsBuildOrGreater (10, 0, 22000);
 }
 
 ATOM Window::InitAtom (HINSTANCE hInstance) {
@@ -99,17 +52,6 @@ ATOM Window::Initialize (HINSTANCE hInstance) {
     Window::rsrc = LoadResourcesModule ();
     Window::menu = LoadMenu (hInstance, MAKEINTRESOURCE (1));
     Window::wndmenu = LoadMenu (hInstance, MAKEINTRESOURCE (2));
-
-    {
-        int i = 0x100;
-        int m = 0;
-        int n = 0;
-        while (m = LoadString (hInstance, i, &szFilters [n], sizeof szFilters / sizeof szFilters [0] - n - 1)) {
-            n += m + 1;
-            i++;
-        }
-        szFilters [n] = L'\0';
-    }
 
     if (IsWindows11OrGreater ()) {
         if (Settings::Get (0x5A, 0)) {
@@ -129,28 +71,34 @@ ATOM Window::Initialize (HINSTANCE hInstance) {
     return Window::atom;
 }
 
-Window::Window (int show)
+Window::Window (OpenMode mode)
     : Windows::Window (this->rsrc, MAKEINTRESOURCE (2)) {
 
-    this->CommonConstructor (show);
+    this->CommonConstructor (mode);
 }
 
-Window::Window (int show, File && file)
+Window::Window (OpenMode mode, File && file)
     : Windows::Window (this->rsrc, MAKEINTRESOURCE (2))
     , File (std::move (file)) {
 
-    this->CommonConstructor (show);
+    this->CommonConstructor (mode);
 }
 
-void Window::CommonConstructor (int show) {
+void Window::CommonConstructor (OpenMode mode) {
     this->icons.aux.try_emplace (1);
+    this->icons.aux.try_emplace (2);
 
     DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
     DWORD extra = WS_EX_APPWINDOW | WS_EX_ACCEPTFILES;
 
     // TODO: last position?
 
-    ShowWindow (this->Create (this->instance, this->atom, style, extra), show);
+    auto h = this->Create (this->instance, this->atom, style, extra);
+    ShowWindow (h, mode.show);
+    if (mode.above) {
+        SetWindowPos (h, mode.above, 0, 0, 0, 0,
+                      SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+    }
 }
 
 bool Window::CloakIfRequired () {
@@ -253,6 +201,7 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
                                        WS_HSCROLL | WS_VSCROLL | ES_MULTILINE | ES_WANTRETURN,
                                        0, 0, 0, 0, hWnd, (HMENU) ID::EDITOR, cs->hInstance, NULL)) {
         // This is temporary
+        // TODO: WS_EX_STATICEDGE if AeroLite, nothing otherwise
     }
 
     auto style = WS_CHILD | SBARS_TOOLTIPS | CCS_NOPARENTALIGN | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
@@ -275,41 +224,6 @@ LRESULT Window::OnCreate (const CREATESTRUCT * cs) {
     this->OnVisualEnvironmentChange ();
     this->OnDpiChange (NULL, this->dpi);
     return 0;
-}
-
-void Window::UpdateFileName () {
-    extern const wchar_t * szVersionInfo [8];
-
-    if (this->handle != INVALID_HANDLE_VALUE) {
-        if (auto szFileName = this->File::GetCurrentFileName (szTmpPathBuffer, MAX_NT_PATH)) {
-
-            // status bar
-            SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, 0);
-
-            // construct caption
-            if (auto file = std::wcsrchr (szTmpPathBuffer, L'\\')) {
-                std::wmemmove (szTmpPathBuffer, file + 1, std::wcslen (file));
-            }
-
-        } else {
-            SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, (LPARAM) L"\x2370");
-            std::wcscpy (szTmpPathBuffer, L"\x2370");
-        }
-
-        std::wcscat (szTmpPathBuffer, L" \x2013 ");
-    } else {
-        SendDlgItemMessage (this->hWnd, ID::STATUSBAR, SB_SETTEXT, StatusBarCell::FileName | SBT_OWNERDRAW, 0);
-        szTmpPathBuffer [0] = L'\0';
-    }
-
-    // TODO: prefix with symbol if there are unsaved changes; maybe use taskbar overlay
-
-    std::wcscat (szTmpPathBuffer, szVersionInfo [0]);
-
-    wchar_t szPID [16];
-    std::swprintf (szPID, 16, L" // %u", GetCurrentProcessId ());
-    std::wcscat (szTmpPathBuffer, szPID);
-    SetWindowText (this->hWnd, szTmpPathBuffer);
 }
 
 LRESULT Window::OnFinalize () {
@@ -471,29 +385,22 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
             this->ToggleTopmost ();
             break;
 
-        case 0x20:
-            // New file
-            // TODO: if unsaved changes, ask to save or not
-
-            if (this->IsOpen ()) {
-                this->close ();
-                this->UpdateFileName ();
+        case ID::EDITOR: // this is temporary
+            if (notification == EN_CHANGE) {
+                if (!bTmpChanged) {
+                    bTmpChanged = true;
+                    this->UpdateFileName ();
+                }
             }
             break;
 
+        case 0x20:
         case 0x21:
-            new Window (SW_SHOWNORMAL);
-            break;
-
         case 0x22:
-            //if unsaved changes ask: Save, Save As, Don't Save (forget changes), Cancel
-
-            this->OpenFile ();
-            break;
-
         case 0x23:
-            // TODO: Open Files
-            break;
+        case 0x24:
+        case 0x25:
+            return this->OnFileOpCommand (hChild, id, notification);
 
         case 0x5A:
         case 0x5B:
@@ -510,7 +417,11 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
                          MAKELPARAM (id, !IsMenuItemChecked (menu, id)));
             break;
 
-        case 0x12: case 0x13: case 0x14: case 0x15: case 0x16:
+        case 0x12:
+        case 0x13:
+        case 0x14:
+        case 0x15:
+        case 0x16:
             this->TrackMenu (id - 0x12);
             break;
 
@@ -546,80 +457,6 @@ LRESULT Window::OnCommand (HWND hChild, USHORT id, USHORT notification) {
     return 0;
 }
 
-DWORD GetErrorMessage (DWORD code, wchar_t * buffer, std::size_t length) {
-    if (auto n = FormatMessage (FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK |
-                                FORMAT_MESSAGE_FROM_SYSTEM, NULL, code, 0, buffer, (DWORD) length, NULL)) {
-        return n;
-    }
-
-    static const wchar_t * const modules [] = {
-        L"WININET",
-        L"NTDLL" // ???
-    };
-    for (auto i = 0u; i < sizeof modules / sizeof modules [0]; ++i) {
-        if (auto module = GetModuleHandle (modules [i])) {
-            if (auto n = FormatMessage (FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK |
-                                        FORMAT_MESSAGE_FROM_HMODULE, module, code, 0, buffer, (DWORD) length, NULL)) {
-                return n;
-            }
-        }
-    }
-    return 0;
-}
-
-void Window::OpenFile () {
-    wchar_t filename [MAX_NT_PATH];
-
-    OPENFILENAME ofn {};
-    ofn.lStructSize = sizeof (OPENFILENAME);
-    ofn.hwndOwner = this->hWnd;
-    ofn.hInstance = Windows::GetCurrentModuleHandle ();
-    ofn.lpstrFilter = szFilters;
-    ofn.lpstrCustomFilter = NULL;
-    ofn.nFilterIndex = 1;
-    ofn.lpstrFile = this->File::GetCurrentFileName (filename, MAX_NT_PATH);
-    if (!ofn.lpstrFile) {
-        ofn.lpstrFile = filename;
-        filename [0] = L'\0';
-    }
-    ofn.nMaxFile = MAX_NT_PATH - 6;
-    ofn.lpstrFileTitle = NULL;
-    ofn.lpstrInitialDir = NULL;
-    ofn.lpstrTitle = NULL;
-    ofn.Flags = OFN_FILEMUSTEXIST | OFN_EXPLORER | OFN_ENABLESIZING;
-    ofn.lpstrDefExt = L"txt";
-
-    if (GetOpenFileName (&ofn)) {
-        // MessageBox (this->hWnd, ofn.lpstrFile, ofn.lpstrFile, 0);
-
-        File f;
-        if (f.open (ofn.lpstrFile, !(ofn.Flags & OFN_READONLY))) {
-            this->close ();
-            *((File *) this) = std::move (f);
-
-            this->UpdateFileName ();
-        } else {
-            wchar_t err [256];
-            GetErrorMessage (GetLastError (), err, 256);
-            MessageBox (this->hWnd, err, err, MB_ICONERROR);
-            // TODO: Message box with failure
-
-            // TODO: if writable and access denied, try open for read and on success show msgbox
-        }
-    } else {
-        if (GetLastError () != ERROR_SUCCESS) { // not cancelled
-            wchar_t err [256];
-            GetErrorMessage (GetLastError (), err, 256);
-            MessageBox (this->hWnd, err, err, MB_ICONERROR);
-        }
-    }
-}
-
-void Window::OpenFiles () {
-    wchar_t filename [65536]; // max size stored in 2 bytes as documented for OPENFILENAME
-
-}
-
 LRESULT Window::OnNotify (WPARAM id, NMHDR * nm) {
     switch (id) {
         case ID::MENUBAR:
@@ -650,9 +487,6 @@ LRESULT Window::OnDrawItem (WPARAM id, const DRAWITEMSTRUCT * draw) {
 LRESULT Window::OnEraseBackground (HDC hDC) {
     RECT r;
     GetClientRect (this->hWnd, &r);
-
-    printf ("OnEraseBackground %p: %p\n", this->hWnd, WindowFromDC (hDC));
-
     SetDCBrushColor (hDC, 0x000000);
     FillRect (hDC, &r, (HBRUSH) GetStockObject (DC_BRUSH));
     return TRUE;
@@ -692,54 +526,6 @@ LRESULT Window::OnUserMessage (UINT message, WPARAM, LPARAM lParam) {
     return 0;
 }
 
-LRESULT Window::OnCopyData (HWND hSender, ULONG_PTR code, const void * data, std::size_t size) {
-    switch (code) {
-        case CopyCode::OpenFile:
-            if (size >= sizeof (OpenFileRequest)) {
-                auto request = static_cast <const Window::OpenFileRequest *> (data);
-                try {
-                    if (request->handle) {
-                        return (LRESULT) (new Window (request->nCmdShow, File ((HANDLE) (std::intptr_t) request->handle)))->hWnd;
-                    } else {
-                        return (LRESULT) (new Window (request->nCmdShow))->hWnd;
-                    }
-                } catch (...) {
-                }
-            }
-            return FALSE;
-
-        case CopyCode::OpenFileCheck:
-            return (size >= sizeof (FILE_ID_INFO))
-                && this->File::IsOpen ((const FILE_ID_INFO *) data);
-    }
-    return 0;
-}
-
-LRESULT Window::OnDropFiles (HDROP hDrop) {
-    if (auto n = DragQueryFile (hDrop, 0xFFFFFFFF, NULL, 0)) {
-        for (auto i = 0u; i != n; ++i) {
-
-            TCHAR szFileName [MAX_NT_PATH];
-            if (DragQueryFile (hDrop, i, szFileName, MAX_NT_PATH)) {
-                //MessageBox (hWnd, szFileName, szFileName, 0);
-
-                if (n > 1) {
-                    // TODO: open in new window
-
-
-                } else {
-                    // TODO: open in this window
-
-
-                }
-            }
-        }
-    }
-
-    DragFinish (hDrop);
-    return 0;
-}
-
 LRESULT Window::OnDpiChange (RECT *, LONG) {
     auto dpiNULL = Windows::GetDPI (NULL);
     if (auto hMenuBar = GetDlgItem (this->hWnd, ID::MENUBAR)) {
@@ -754,7 +540,7 @@ LRESULT Window::OnDpiChange (RECT *, LONG) {
 
 BOOL WINAPI UpdateWindowTreeTheme (HWND hCtrl, LPARAM param) {
     EnumChildWindows (hCtrl, UpdateWindowTreeTheme, param);
-
+    
     if (auto atom = GetClassWord (hCtrl, GCW_ATOM)) {
         if (atom == atomCOMBOBOX) {
             SetWindowTheme (hCtrl, param ? L"DarkMode_CFD" : NULL, NULL);
