@@ -38,6 +38,7 @@ struct Editor {
 
 bool File::init (HANDLE h) noexcept {
     if (this->init_id (h)) {
+        this->close ();
         this->handle = h;
         return true;
     } else
@@ -140,6 +141,7 @@ bool File::open (HANDLE h, bool writable) noexcept {
                     if (auto p = MapViewOfFile (m,
                                                 writable ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ,
                                                 0, 0, 0)) {
+                        this->close ();
                         this->handle = h;
                         this->mapping = m;
                         this->data = p;
@@ -153,6 +155,7 @@ bool File::open (HANDLE h, bool writable) noexcept {
                 }
             } else {
                 // empty file
+                this->close ();
                 this->handle = h;
                 this->mapping = NULL;
                 this->data = NULL;
@@ -167,7 +170,7 @@ bool File::open (HANDLE h, bool writable) noexcept {
 }
 
 void File::close () {
-    this->id_type = MaximumFileIdType;
+    //this->id_type = MaximumFileIdType;
     this->writable = false;
 
     if (this->data) {
