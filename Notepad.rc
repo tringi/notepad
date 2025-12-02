@@ -1,13 +1,14 @@
 #include <Windows.h>
 
 1 ICON "trimcore.ico"
+2 ICON "icons/unsaved-badge.ico"
 
 1 ACCELERATORS
 {
     "N", 0x20, CONTROL, VIRTKEY         // Ctrl+N, New
     "N", 0x21, CONTROL, SHIFT, VIRTKEY  // Ctrl+Shift+N, New Window
     "O", 0x22, CONTROL, VIRTKEY         // Ctrl+O, Open
-    "O", 0x23, CONTROL, SHIFT, VIRTKEY  // Ctrl+Shift+O, Open in New Window
+    "O", 0x23, CONTROL, SHIFT, VIRTKEY  // Ctrl+Shift+O, Open (possibly multiple) in New Window (holt Ctrl for background)
     "S", 0x24, CONTROL, VIRTKEY         // Ctrl+S, Save
     "S", 0x25, CONTROL, SHIFT, VIRTKEY  // Ctrl+Shift+S, Save As
 
@@ -45,10 +46,44 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
 STRINGTABLE
 LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
 {
-    0x100 "Text Documents (*.txt)"
-    0x101 "*.txt"
-    0x102 "All Files (*.*)"
-    0x103 "*.*"
+    // fallback Open dialog button labels
+    0x100 "Open"
+    0x101 "Open as &read-only"
+}
+
+STRINGTABLE
+LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
+{
+    0x110 "Text Documents (*.txt)"
+    0x111 "*.txt"
+    0x112 "Various Text Files (*.txt, *.md, *.csv, *.cfg, *.json, *.xml, *.log)"
+    0x113 "*.txt;*.md;*.csv;*.cfg;*.json;*.xml;*.log"
+    0x114 "All Files (*.*)"
+    0x115 "*.*"
+}
+
+STRINGTABLE
+LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
+{
+    // * prefix means Save dialog only
+    0x120 "Auto-Detect Encoding"
+    0x121 "Active Code Page"
+    0x122 "UTF-7"
+    0x123 "UTF-8"
+    0x124 "*UTF-8 without BOM"
+    0x125 "UTF-16"
+    0x126 "UTF-16 BE"
+    0x127 "UTF-32"
+    0x128 "UTF-32 BE"
+    // TODO: List other common encodings
+}
+
+STRINGTABLE
+LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
+{
+    // Taskbar icon overlay accessibility text
+    0x1A0 "There is unsaved text in the editor"
+    0x1A1 "There are unsaved changes to the ""%s"" file"
 }
 
 // Main menu
@@ -62,6 +97,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_DEFAULT
         MENUITEM "&New\tCtrl+N",    0x20
         MENUITEM "New &Window\tCtrl+Shift+N", 0x21
         MENUITEM "&Open…\tCtrl+O",  0x22
+        // MENUITEM "Open in New Window…\tCtrl+Shift+O",  0x23
         MENUITEM "&Save\tCtrl+S",   0x24
         MENUITEM "Save &As…",       0x25
         MENUITEM SEPARATOR
