@@ -202,10 +202,8 @@
       <LargeAddressAware>true</LargeAddressAware>
       <SetChecksum>true</SetChecksum>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
-      <StackReserveSize>
-      </StackReserveSize>
-      <StackCommitSize>
-      </StackCommitSize>
+      <StackReserveSize>524288</StackReserveSize>
+      <StackCommitSize>16384</StackCommitSize>
       <HeapReserveSize>262144</HeapReserveSize>
       <HeapCommitSize>0</HeapCommitSize>
     </Link>
@@ -292,10 +290,8 @@
       <SwapRunFromNET>true</SwapRunFromNET>
       <SetChecksum>true</SetChecksum>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
-      <StackReserveSize>
-      </StackReserveSize>
-      <StackCommitSize>
-      </StackCommitSize>
+      <StackReserveSize>524288</StackReserveSize>
+      <StackCommitSize>16384</StackCommitSize>
       <HeapReserveSize>262144</HeapReserveSize>
       <HeapCommitSize>0</HeapCommitSize>
     </Link>
@@ -334,10 +330,8 @@
       <SwapRunFromCD>true</SwapRunFromCD>
       <SwapRunFromNET>true</SwapRunFromNET>
       <SetChecksum>true</SetChecksum>
-      <StackReserveSize>
-      </StackReserveSize>
-      <StackCommitSize>
-      </StackCommitSize>
+      <StackReserveSize>524288</StackReserveSize>
+      <StackCommitSize>16384</StackCommitSize>
       <HeapReserveSize>262144</HeapReserveSize>
       <HeapCommitSize>0</HeapCommitSize>
     </Link>
@@ -348,10 +342,20 @@
   <ItemGroup>
     <ClCompile Include="Notepad.cpp" />
     <ClCompile Include="Notepad_File.cpp" />
+    <ClCompile Include="Notepad_IPC.cpp" />
     <ClCompile Include="Notepad_Settings.cpp" />
     <ClCompile Include="Notepad_Window.cpp" />
+    <ClCompile Include="Notepad_Window_FileOps.cpp" />
     <ClCompile Include="Notepad_Window_MenuBar.cpp" />
     <ClCompile Include="Notepad_Window_StatusBar.cpp" />
+    <ClCompile Include="Old Snippets.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="Windows\Windows_AccessibilityTextScale.cpp" />
     <ClCompile Include="Windows\Windows_CreateSolidBrushEx.cpp" />
     <ClCompile Include="Windows\Windows_DrawTextComposited.cpp" />
@@ -368,6 +372,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Notepad_File.hpp" />
+    <ClInclude Include="Notepad_IPC.hpp" />
     <ClInclude Include="Notepad_Settings.hpp" />
     <ClInclude Include="Notepad_Window.hpp" />
     <ClInclude Include="Windows\Windows_AccessibilityTextScale.hpp" />

@@ -34,6 +34,9 @@
     <ClCompile Include="Notepad_File.cpp" />
     <ClCompile Include="Notepad_Window_StatusBar.cpp" />
     <ClCompile Include="Notepad_Window_MenuBar.cpp" />
+    <ClCompile Include="Notepad_Window_FileOps.cpp" />
+    <ClCompile Include="Old Snippets.cpp" />
+    <ClCompile Include="Notepad_IPC.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Notepad.rc" />
@@ -81,6 +84,7 @@
       <Filter>Windows</Filter>
     </ClInclude>
     <ClInclude Include="Notepad_File.hpp" />
+    <ClInclude Include="Notepad_IPC.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Windows\Windows_Symbol.tcc">
