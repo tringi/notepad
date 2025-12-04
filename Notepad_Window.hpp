@@ -41,6 +41,8 @@ private:
 
 public:
     using File::handle;
+    using File::writable;
+    using File::GetActualMemoryUsage;
 
     struct ID {
         enum : WORD {
@@ -143,6 +145,7 @@ private:
     void RecreateMenuButtons (HWND hMenuBar);
     void UpdateFileName ();
     void OpenFile (bool multiple);
+    const wchar_t * GetSaveAsPath ();
     void SetStatus (StatusBarCell::Constant, const wchar_t *);
     LONG UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE size);
     HBRUSH CreateDarkMenuBarBrush (bool hot);
