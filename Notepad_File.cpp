@@ -1,4 +1,7 @@
 #include "Notepad_File.hpp"
+#include <Psapi.h>
+#include <MemoryAPI.h>
+
 #include <cstring>
 #include <cwchar>
 
@@ -114,7 +117,7 @@ bool File::open (bool writable) noexcept {
 
 bool File::open (const wchar_t * path, bool writable) noexcept {
     auto h = CreateFile (path, GENERIC_READ | (writable ? GENERIC_WRITE : 0),
-                         FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+                         FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
 
     this->init_id (h);
     if (this->open (h, writable))
@@ -214,4 +217,36 @@ wchar_t * File::GetCurrentFileName (wchar_t * buffer, DWORD length) const {
         return buffer;
     } else
         return nullptr;
+}
+
+std::size_t File::GetActualMemoryUsage () const {
+    std::size_t usage = 0;
+
+    LARGE_INTEGER size;
+    if (GetFileSizeEx (this->handle, &size) && (size.QuadPart > 0)) {
+
+        static constexpr std::size_t chunk = 512; // 4096?
+        static constexpr std::size_t page_size = 4096; // fixed
+
+        auto pages = (size.QuadPart + page_size - 1) / page_size;
+        auto address = (std::uint8_t *) this->data;
+        PSAPI_WORKING_SET_EX_INFORMATION slots [chunk];
+
+        for (auto i = 0uLL; i != size.QuadPart / page_size / chunk + 1; ++i) {
+            for (auto & slot : slots) {
+                slot.VirtualAddress = address;
+                address += page_size;
+            }
+            if (QueryWorkingSetEx (GetCurrentProcess (), slots, sizeof slots)) {
+                for (auto & slot : slots) {
+                    if (slot.VirtualAttributes.Valid) {
+                        usage += page_size;
+                    }
+                    if (--pages == 0)
+                        return usage;
+                }
+            }
+        }
+    }
+    return usage;
 }

@@ -60,6 +60,7 @@ public:
     bool IsOpen (const FILE_ID_INFO *) const noexcept;
 
     wchar_t * GetCurrentFileName (wchar_t * buffer, DWORD length) const;
+    std::size_t GetActualMemoryUsage () const;
 
 private:
     bool init_id (HANDLE h) noexcept;
