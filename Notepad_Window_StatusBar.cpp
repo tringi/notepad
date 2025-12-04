@@ -4,7 +4,50 @@
 #include "Windows\Windows_IsWindowsBuildOrGreater.hpp"
 #include "Windows\Windows_CreateSolidBrushEx.hpp"
 
+#include <winioctl.h>
+
 extern wchar_t szTmpPathBuffer [MAX_NT_PATH];
+
+void FormatSize (ULONGLONG value, wchar_t * buffer, std::size_t length) {
+    buffer [0] = L'\0';
+
+    if (value <= 921u) {
+        wchar_t string [4];
+        std::swprintf (string, 4, L"%llu", value);
+
+        wchar_t format [64];
+        LoadString (GetModuleHandle (L"SHELL32"), 4113, format, 64);
+
+        std::swprintf (buffer, length, format, string);
+
+    } else {
+        int scale = -1;
+        static const char prefix [] = { 'k', 'M', 'G', 'T', 'P', 'E' };
+
+        while (value > 1048576u) {
+            value /= 1024u;
+            ++scale;
+        }
+
+        double divided = (double) value;
+        while ((divided > 921.0) && (scale < (int) (sizeof prefix - 1))) {
+            divided /= 1024.0;
+            ++scale;
+        }
+
+        wchar_t number [8];
+        std::swprintf (number, 8, L"%.2f", divided);
+
+        if (auto n = GetNumberFormatEx (LOCALE_NAME_USER_DEFAULT, 0, number, NULL, buffer, (int) length - 2)) {
+            buffer [n - 1] = L'\x2008'; // punctuation space
+            buffer [n - 0] = prefix [scale];
+            buffer [n + 1] = L'B';
+            buffer [n + 2] = L'\0';
+        } else {
+            std::swprintf (buffer, length, L"%s\x2008%cB", number, prefix [scale]);
+        }
+    }
+}
 
 LRESULT CALLBACK StatusBarTooltipSubclassProcedure (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam,
                                                     UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
@@ -14,24 +57,63 @@ LRESULT CALLBACK StatusBarTooltipSubclassProcedure (HWND hWnd, UINT message, WPA
                     
                 auto window = reinterpret_cast <Window *> (dwRefData);
                 auto nmTT = reinterpret_cast <TOOLTIPTEXT *> (lParam);
+                
+                nmTT->lpszText = NULL;
+                szTmpPathBuffer [0] = L'\0';
 
                 switch (wParam) {
                     case Window::StatusBarCell::FileName:
-                        nmTT->szText [0] = L'\0';
-                        nmTT->lpszText = NULL;
-
                         if (window->handle != INVALID_HANDLE_VALUE) {
-                            if (GetFinalPathNameByHandle (window->handle, szTmpPathBuffer, MAX_NT_PATH, VOLUME_NAME_DOS)) {
-                                nmTT->lpszText = szTmpPathBuffer;
-                            }
-                        }
-                        return 0;
+                            GetFinalPathNameByHandle (window->handle, szTmpPathBuffer, MAX_NT_PATH, VOLUME_NAME_GUID);
 
-                    case Window::StatusBarCell::CursorPos:nmTT->lpszText = (LPWSTR) L"Current line and column"; return 0;
-                    case Window::StatusBarCell::FileSize: nmTT->lpszText = (LPWSTR) L"Disk: 160 kB, Memory: 500 kB, 10 kB of unsaved edits, 200 kB in undo steps"; return 0;
-                    case Window::StatusBarCell::ZoomLevel:nmTT->lpszText = (LPWSTR) L"Ctrl+Wheel"; return 0;
-                    case Window::StatusBarCell::LineEnds: nmTT->lpszText = (LPWSTR) L"Windows mode, click to change"; return 0;
-                    case Window::StatusBarCell::Encoding: nmTT->lpszText = (LPWSTR) L"Click to change"; return 0;
+                            // FileStreamInfo ???
+                            /*if (GetFileInformationByHandleEx (window->handle, FileRemoteProtocolInfo, &info, sizeof info)) { // Win7+
+
+                            }*/
+                        }
+                        break;
+
+                    case Window::StatusBarCell::CursorPos:nmTT->lpszText = (LPWSTR) L"Current line and column"; break;
+                    case Window::StatusBarCell::FileSize:
+                        if (window->handle != INVALID_HANDLE_VALUE) {
+
+                            FILE_STANDARD_INFO info {};
+                            STARTING_VCN_INPUT_BUFFER vcninput {};
+                            RETRIEVAL_POINTERS_BUFFER pointers {};
+                            DWORD dwRed = 0;
+
+                            GetFileInformationByHandleEx (window->handle, FileStandardInfo, &info, sizeof info);
+                            DeviceIoControl (window->handle, FSCTL_GET_RETRIEVAL_POINTERS, &vcninput, sizeof vcninput, &pointers, sizeof pointers, &dwRed, NULL);
+                            
+                            if (pointers.ExtentCount == 0) { // ERROR_HANDLE_EOF, small file content that is allocated only within MFT entry
+                                info.AllocationSize.QuadPart = 0;
+                            }
+
+                            wchar_t ondisk [32];
+                            wchar_t inmemory [32];
+                            FormatSize (info.AllocationSize.QuadPart, ondisk, 32);
+                            FormatSize (window->GetActualMemoryUsage (), inmemory, 32);
+
+                            std::swprintf (szTmpPathBuffer, MAX_NT_PATH,
+                                           L"Size on disk: %s; Memory usage: %s; Unsaved edits: TBD bytes, Undo memory: TBD bytes",
+                                           ondisk, inmemory);
+                        }
+                        break;
+
+                    case Window::StatusBarCell::ReadOnly:
+                        if (!window->writable) {
+                            //LoadString (NULL, ..., szTmpPathBuffer, MAX_NT_PATH);
+                            nmTT->lpszText = (LPWSTR) L"...";
+                        }
+                        break;
+
+                    case Window::StatusBarCell::ZoomLevel:nmTT->lpszText = (LPWSTR) L"Ctrl+Wheel"; break;
+                    case Window::StatusBarCell::LineEnds: nmTT->lpszText = (LPWSTR) L"Windows mode, click to change"; break;
+                    case Window::StatusBarCell::Encoding: nmTT->lpszText = (LPWSTR) L"Click to change"; break;
+                }
+
+                if (!nmTT->lpszText && szTmpPathBuffer [0] != L'\0') {
+                    nmTT->lpszText = szTmpPathBuffer;
                 }
                 return 0;
             }
@@ -74,7 +156,7 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
 
     SIZE status = GetClientSize (hStatusBar);
 
-    static const short widths [] = { 64, 80, 56, 52, 48, 96, 128 };
+    static const short widths [] = { 64, 80, 72, 52, 48, 96, 128 };
     static const auto  n = sizeof widths / sizeof widths [0];
 
     int scaled [n + 1] = {};
@@ -94,10 +176,9 @@ LONG Window::UpdateStatusBar (HWND hStatusBar, UINT dpi, SIZE parent) {
     this->UpdateFileName ();
 
     // TODO: if changes were made, number of rows changed (size in hint)
-    // TODO: open mode (writable or readonly)
 
     this->SetStatus (StatusBarCell::CursorPos, L"5\x2236""16"); // TODO: click to Go To
-    this->SetStatus (StatusBarCell::FileSize,  L"240\x200AkB");
+    this->SetStatus (StatusBarCell::FileSize,  nullptr);
     this->SetStatus (StatusBarCell::ReadOnly,  nullptr);
     this->SetStatus (StatusBarCell::ZoomLevel, L"100\x200A%"); // TODO: click to Zoom
     this->SetStatus (StatusBarCell::LineEnds,  L"CR LF"); // TODO: click to change
@@ -166,6 +247,17 @@ LRESULT Window::OnDrawStatusBar (WPARAM id, const DRAWITEMSTRUCT * draw) {
             if (this->handle != INVALID_HANDLE_VALUE) {
                 if (!this->File::writable) {
                     string = L"Read Only";
+                }
+            }
+            break;
+        case StatusBarCell::FileSize:
+            // TODO: compute size of the final file
+
+            if (this->handle != INVALID_HANDLE_VALUE) {
+                LARGE_INTEGER size;
+                if (GetFileSizeEx (this->handle, &size)) {
+                    FormatSize (size.QuadPart, szTmpPathBuffer, MAX_NT_PATH);
+                    string = szTmpPathBuffer;
                 }
             }
             break;
